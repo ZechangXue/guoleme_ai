@@ -93,7 +93,9 @@ struct SettingsView: View {
     }
 
     private var languageBinding: Binding<AnswerLanguage> {
-        Binding(get: { model.settings.answerLanguage }, set: { model.settingsStore.update { $0.answerLanguage = $1 } })
+        Binding(get: { model.settings.answerLanguage }, set: { value in
+            model.settingsStore.update { $0.answerLanguage = value }
+        })
     }
     private var meetingBinding: Binding<Bool> {
         Binding(get: { model.settings.meetingMode }, set: { value in
@@ -112,10 +114,14 @@ struct SettingsView: View {
         })
     }
     private var autoDismissBinding: Binding<Bool> {
-        Binding(get: { model.settings.autoDismissCardOnNewQuestion }, set: { model.settingsStore.update { $0.autoDismissCardOnNewQuestion = $1 } })
+        Binding(get: { model.settings.autoDismissCardOnNewQuestion }, set: { value in
+            model.settingsStore.update { $0.autoDismissCardOnNewQuestion = value }
+        })
     }
     private var realtimeBinding: Binding<Bool> {
-        Binding(get: { model.settings.useRealtimeAllInOne }, set: { model.settingsStore.update { $0.useRealtimeAllInOne = $1 } })
+        Binding(get: { model.settings.useRealtimeAllInOne }, set: { value in
+            model.settingsStore.update { $0.useRealtimeAllInOne = value }
+        })
     }
     private var providerBinding: Binding<ApiProvider> {
         Binding(get: { model.settings.apiProvider }, set: { provider in
@@ -128,10 +134,14 @@ struct SettingsView: View {
         })
     }
     private var modelBinding: Binding<String> {
-        Binding(get: { model.settings.model }, set: { model.settingsStore.update { $0.model = $1 } })
+        Binding(get: { model.settings.model }, set: { value in
+            model.settingsStore.update { $0.model = value }
+        })
     }
     private var styleBinding: Binding<ResponseStyle> {
-        Binding(get: { model.settings.responseStyle }, set: { model.settingsStore.update { $0.responseStyle = $1 } })
+        Binding(get: { model.settings.responseStyle }, set: { value in
+            model.settingsStore.update { $0.responseStyle = value }
+        })
     }
 
     private func saveKey() {
