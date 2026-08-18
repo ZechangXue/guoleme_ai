@@ -26,8 +26,7 @@ final class AppModel: ObservableObject {
     private var fallbackMic: MicCapture?
     private var vad = VoiceActivityDetector()
     private var translateMic: MicCapture?
-    private var translateVad = VoiceActivityDetector()
-    private var translateBuffers: [Data] = []
+    private var translateAudio = TranslateAudioBuffer()
     private var streamStopped = false
     private var cancellables: Set<AnyCancellable> = []
 
@@ -103,7 +102,7 @@ final class AppModel: ObservableObject {
         fallbackMic = nil
         translateMic?.stop()
         translateMic = nil
-        translateVad.flush()
+        translateAudio.reset()
         vad.reset()
         ListeningLiveActivityController.end()
     }
@@ -198,13 +197,12 @@ final class AppModel: ObservableObject {
     }
 
     func summarizeTranslate(withReply: Bool) async {
-        translateVad.flush()
-        guard !translateBuffers.isEmpty else {
+        let pcm = translateAudio.takeAll()
+        let minBytes = Int(AppConstants.realtimeSampleRate * 2 * 0.4)
+        guard pcm.count >= minBytes else {
             pushTranslate("（未检测到有效语音）", streaming: false)
             return
         }
-        let pcm = translateBuffers.reduce(into: Data()) { $0.append($1) }
-        translateBuffers.removeAll()
         guard let openaiKey = KeychainStore.load(provider: .openai) else {
             pushTranslate("（未配置 OpenAI API Key，无法转写音频）", streaming: false)
             return
@@ -216,7 +214,7 @@ final class AppModel: ObservableObject {
         translateSummarizing = true
         defer { translateSummarizing = false }
         do {
-            let result = try await WhisperClient.transcribe(pcm: pcm, sampleRate: Int(AppConstants.asrSampleRate), apiKey: openaiKey)
+            let result = try await WhisperClient.transcribe(pcm: pcm, sampleRate: Int(AppConstants.realtimeSampleRate), apiKey: openaiKey)
             let transcript = result.text
             if transcript.count < 5 {
                 pushTranslate("（未检测到有效语音）", streaming: false)
@@ -298,7 +296,7 @@ final class AppModel: ObservableObject {
                 await self?.handleFallbackSegment(pcm, apiKey: apiKey)
             }
         }
-        let mic = MicCapture(sampleRate: AppConstants.asrSampleRate)
+        let mic = MicCapture(sampleRate: AppConstants.realtimeSampleRate)
         mic.onLevel = { [weak self] level in
             Task { @MainActor in self?.audioLevel = level }
         }
@@ -321,7 +319,7 @@ final class AppModel: ObservableObject {
             return
         }
         do {
-            let result = try await WhisperClient.transcribe(pcm: pcm, sampleRate: Int(AppConstants.asrSampleRate), apiKey: openaiKey)
+            let result = try await WhisperClient.transcribe(pcm: pcm, sampleRate: Int(AppConstants.realtimeSampleRate), apiKey: openaiKey)
             let text = result.text
             guard text.count >= 4, StreamingJSONParser().isLikelyActionable(text) || text.contains("?") || text.count > 12 else { return }
             let system: String
@@ -367,18 +365,14 @@ final class AppModel: ObservableObject {
         listening = true
         UIApplication.shared.isIdleTimerDisabled = true
         ListeningLiveActivityController.start(modeLabel: modeLabel)
-        translateVad.reset()
-        translateVad.onSegment = { [weak self] pcm in
-            Task { @MainActor in
-                self?.translateBuffers.append(pcm)
-            }
-        }
-        let mic = MicCapture(sampleRate: AppConstants.asrSampleRate)
+        translateAudio.reset()
+        let mic = MicCapture(sampleRate: AppConstants.realtimeSampleRate)
+        let audio = translateAudio
         mic.onLevel = { [weak self] level in
             Task { @MainActor in self?.audioLevel = level }
         }
-        mic.onPCM = { [weak self] data in
-            self?.translateVad.ingest(data)
+        mic.onPCM = { data in
+            audio.append(data)
         }
         do {
             try mic.start()

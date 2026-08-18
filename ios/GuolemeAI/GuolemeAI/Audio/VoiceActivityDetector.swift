@@ -43,11 +43,47 @@ final class VoiceActivityDetector {
         }
     }
 
-    func flush() {
-        guard !buffers.isEmpty else { return }
-        let combined = buffers.reduce(into: Data()) { $0.append($1) }
+    func flush() -> Data {
+        guard !buffers.isEmpty else { return Data() }
+        let segment = buffers.reduce(into: Data()) { $0.append($1) }
         buffers.removeAll()
         lastVoiceTime = Date().timeIntervalSince1970
-        onSegment?(combined)
+        onSegment?(segment)
+        return segment
+    }
+}
+
+/// Thread-safe PCM accumulator for translate-summary (audio tap is not on the main thread).
+final class TranslateAudioBuffer {
+    private let lock = NSLock()
+    private var pcm = Data()
+    private let maxBytes: Int
+
+    init(maxSeconds: Double = 90, sampleRate: Double = AppConstants.realtimeSampleRate) {
+        self.maxBytes = max(Int(sampleRate * 2 * maxSeconds), 1)
+    }
+
+    func append(_ chunk: Data) {
+        guard !chunk.isEmpty else { return }
+        lock.lock()
+        pcm.append(chunk)
+        if pcm.count > maxBytes {
+            pcm.removeFirst(pcm.count - maxBytes)
+        }
+        lock.unlock()
+    }
+
+    func takeAll() -> Data {
+        lock.lock()
+        let out = pcm
+        pcm.removeAll(keepingCapacity: true)
+        lock.unlock()
+        return out
+    }
+
+    func reset() {
+        lock.lock()
+        pcm.removeAll(keepingCapacity: true)
+        lock.unlock()
     }
 }
