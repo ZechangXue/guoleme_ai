@@ -10,38 +10,44 @@ struct ContextView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("使用说明") {
-                    Text("面试模式会用简历 / JD / 笔记来针对性作答。组会模式优先用「会议 / 项目文档」；如果还没传项目文档，会回退使用已入库的简历和笔记，避免空泛回答。资料只存在本机。")
+                Section {
+                    Text(model.t(.libraryHelp))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                } header: {
+                    Text(model.t(.libraryHelpTitle))
                 }
-                Section("纯文本粘贴") {
-                    TextField("简历 / CV", text: $context.pasteResume, axis: .vertical)
+                Section {
+                    TextField(model.t(.pasteResume), text: $context.pasteResume, axis: .vertical)
                         .lineLimit(4...10)
-                    TextField("职位描述 / JD", text: $context.pasteJD, axis: .vertical)
+                    TextField(model.t(.pasteJD), text: $context.pasteJD, axis: .vertical)
                         .lineLimit(4...10)
-                    TextField("笔记", text: $context.pasteNotes, axis: .vertical)
+                    TextField(model.t(.pasteNotes), text: $context.pasteNotes, axis: .vertical)
                         .lineLimit(3...8)
-                    Button("保存粘贴内容到资料库") {
+                    Button(model.t(.savePaste)) {
                         context.savePasteFields()
                     }
+                } header: {
+                    Text(model.t(.pasteSection))
                 }
-                Section("导入文件（PDF / TXT / DOCX）") {
-                    Picker("类型", selection: $importerType) {
+                Section {
+                    Picker(model.t(.typeLabel), selection: $importerType) {
                         ForEach(ContextDocType.allCases) { type in
-                            Text(type.displayName).tag(type)
+                            Text(type.displayName(for: model.settings.uiLanguage)).tag(type)
                         }
                     }
-                    Button("从文件 App 选择") { showImporter = true }
+                    Button(model.t(.pickFile)) { showImporter = true }
+                } header: {
+                    Text(model.t(.importSection))
                 }
-                Section("已入库 (\(context.files.count))") {
+                Section {
                     if context.files.isEmpty {
-                        Text("还没有文档").foregroundStyle(.secondary)
+                        Text(model.t(.libraryEmpty)).foregroundStyle(.secondary)
                     } else {
                         ForEach(context.files) { file in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(file.fileName)
-                                Text("\(file.docType.displayName) · \(file.rawText.count) 字")
+                                Text("\(file.docType.displayName(for: model.settings.uiLanguage)) · \(model.t(.charsUnit, file.rawText.count))")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -53,15 +59,17 @@ struct ContextView: View {
                         }
                     }
                     if !context.files.isEmpty {
-                        Button("清空资料库", role: .destructive) {
+                        Button(model.t(.clearLibrary), role: .destructive) {
                             context.clear()
                         }
                     }
+                } header: {
+                    Text(model.t(.libraryCount, context.files.count))
                 }
             }
             .scrollContentBackground(.hidden)
             .background(AppTheme.bg)
-            .navigationTitle("资料库")
+            .navigationTitle(model.t(.libraryTitle))
             .fileImporter(isPresented: $showImporter, allowedContentTypes: DocumentImporter.allowedTypes) { result in
                 switch result {
                 case .success(let url):

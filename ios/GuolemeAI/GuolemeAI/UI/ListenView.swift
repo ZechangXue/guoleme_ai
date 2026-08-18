@@ -43,7 +43,7 @@ struct ListenView: View {
                    let image = UIImage(data: data) {
                     await model.answerFromImage(image)
                 } else {
-                    model.statusMessage = "无法读取相册图片，请换一张再试"
+                    model.statusMessage = model.t(.albumFail)
                 }
             }
         }
@@ -63,17 +63,17 @@ struct ListenView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("过了么AI")
+                    Text(model.t(.appName))
                         .font(.title2.weight(.bold))
                     Text(model.modeLabel)
                         .font(.caption)
                         .foregroundStyle(AppTheme.muted)
-                    Text(model.contextStore.promptStatusLine)
+                    Text(model.contextStore.promptStatusLine(language: model.settings.uiLanguage))
                         .font(.caption2)
                         .foregroundStyle(AppTheme.success.opacity(0.9))
                 }
                 Spacer()
-                AudioLevelView(level: model.audioLevel)
+                AudioLevelView(level: model.audioLevel, label: model.t(.audioLevel))
             }
             Button {
                 model.toggleListening()
@@ -82,7 +82,7 @@ struct ListenView: View {
                     Circle()
                         .fill(model.listening ? AppTheme.success : AppTheme.muted)
                         .frame(width: 8, height: 8)
-                    Text(model.listening ? "暂停监听" : "开始监听")
+                    Text(model.listening ? model.t(.pauseListening) : model.t(.startListening))
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)
@@ -94,14 +94,14 @@ struct ListenView: View {
 
             HStack(spacing: 10) {
                 PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label(model.imageBusy ? "识图中…" : "相册看题", systemImage: "photo")
+                    Label(model.imageBusy ? model.t(.recognizing) : model.t(.albumQA), systemImage: "photo")
                 }
                 .buttonStyle(.bordered)
                 .disabled(model.imageBusy)
                 Button {
                     showCamera = true
                 } label: {
-                    Label(model.imageBusy ? "识图中…" : "拍摄屏幕", systemImage: "camera")
+                    Label(model.imageBusy ? model.t(.recognizing) : model.t(.captureScreen), systemImage: "camera")
                 }
                 .buttonStyle(.bordered)
                 .disabled(model.imageBusy)
@@ -112,18 +112,18 @@ struct ListenView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(model.settings.meetingMode ? "会议模式：等待捕捉提问…" : "等待捕捉下一条「对方提问」…")
+            Text(model.settings.meetingMode ? model.t(.waitMeetingQuestion) : model.t(.waitQuestion))
                 .font(.headline)
-            Text("把 iPhone 靠近电脑扬声器，开始监听后会在本机显示提词。不要覆盖其他 App，也不采集系统内部音频。")
+            Text(model.t(.emptyHint))
                 .font(.footnote)
                 .foregroundStyle(AppTheme.muted)
-            Text(model.contextStore.promptStatusLine)
+            Text(model.contextStore.promptStatusLine(language: model.settings.uiLanguage))
                 .font(.footnote)
                 .foregroundStyle(AppTheme.success)
             VStack(alignment: .leading, spacing: 6) {
-                Label("手机麦克风对准电脑外放", systemImage: "iphone.and.arrow.forward")
-                Label("外放音量开大，减少环境噪音", systemImage: "speaker.wave.2")
-                Label("锁屏后仍可继续听（通知栏会显示监听中）", systemImage: "moon.stars")
+                Label(model.t(.tipMic), systemImage: "iphone.and.arrow.forward")
+                Label(model.t(.tipVolume), systemImage: "speaker.wave.2")
+                Label(model.t(.tipLock), systemImage: "moon.stars")
             }
             .font(.footnote)
             .foregroundStyle(AppTheme.muted)

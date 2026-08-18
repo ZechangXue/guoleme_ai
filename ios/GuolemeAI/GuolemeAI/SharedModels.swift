@@ -13,8 +13,13 @@ enum ApiProvider: String, Codable, CaseIterable, Identifiable {
         case .openai: return "OpenAI"
         case .google: return "Google (Gemini)"
         case .deepseek: return "DeepSeek"
-        case .qwen: return "千问 (Qwen)"
+        case .qwen: return "Qwen"
         }
+    }
+
+    func displayName(for language: UILanguage) -> String {
+        if self == .qwen { return L10n.t(.qwen, language: language) }
+        return displayName
     }
 }
 
@@ -40,13 +45,15 @@ enum ContextDocType: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var displayName: String {
+    var displayName: String { displayName(for: .zh) }
+
+    func displayName(for language: UILanguage) -> String {
         switch self {
-        case .resume: return "简历 / CV"
-        case .jobDescription: return "职位描述 / JD"
-        case .qaNotes: return "笔记"
-        case .projectNotes: return "项目笔记"
-        case .meetingDoc: return "会议 / 项目文档"
+        case .resume: return L10n.t(.pasteResume, language: language)
+        case .jobDescription: return L10n.t(.pasteJD, language: language)
+        case .qaNotes: return L10n.t(.pasteNotes, language: language)
+        case .projectNotes: return L10n.t(.docNotes, language: language)
+        case .meetingDoc: return L10n.t(.docMeeting, language: language)
         }
     }
 
@@ -256,6 +263,8 @@ struct AppSettings: Codable, Equatable {
     var meetingMode: Bool
     var answerLanguage: AnswerLanguage
     var translateMode: Bool
+    var uiLanguage: UILanguage
+    var didChooseUILanguage: Bool
 
     static let `default` = AppSettings(
         apiProvider: .openai,
@@ -266,6 +275,70 @@ struct AppSettings: Codable, Equatable {
         autoDismissCardOnNewQuestion: true,
         meetingMode: false,
         answerLanguage: .en,
-        translateMode: false
+        translateMode: false,
+        uiLanguage: .zh,
+        didChooseUILanguage: false
     )
+
+    enum CodingKeys: String, CodingKey {
+        case apiProvider, model, systemPrompt, useRealtimeAllInOne, responseStyle
+        case autoDismissCardOnNewQuestion, meetingMode, answerLanguage, translateMode
+        case uiLanguage, didChooseUILanguage
+    }
+
+    init(
+        apiProvider: ApiProvider,
+        model: String,
+        systemPrompt: String,
+        useRealtimeAllInOne: Bool,
+        responseStyle: ResponseStyle,
+        autoDismissCardOnNewQuestion: Bool,
+        meetingMode: Bool,
+        answerLanguage: AnswerLanguage,
+        translateMode: Bool,
+        uiLanguage: UILanguage,
+        didChooseUILanguage: Bool
+    ) {
+        self.apiProvider = apiProvider
+        self.model = model
+        self.systemPrompt = systemPrompt
+        self.useRealtimeAllInOne = useRealtimeAllInOne
+        self.responseStyle = responseStyle
+        self.autoDismissCardOnNewQuestion = autoDismissCardOnNewQuestion
+        self.meetingMode = meetingMode
+        self.answerLanguage = answerLanguage
+        self.translateMode = translateMode
+        self.uiLanguage = uiLanguage
+        self.didChooseUILanguage = didChooseUILanguage
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        apiProvider = try c.decodeIfPresent(ApiProvider.self, forKey: .apiProvider) ?? .openai
+        model = try c.decodeIfPresent(String.self, forKey: .model) ?? ProviderConfig.defaultModel(for: .openai)
+        systemPrompt = try c.decodeIfPresent(String.self, forKey: .systemPrompt) ?? PromptCatalog.defaultSystem
+        useRealtimeAllInOne = try c.decodeIfPresent(Bool.self, forKey: .useRealtimeAllInOne) ?? true
+        responseStyle = try c.decodeIfPresent(ResponseStyle.self, forKey: .responseStyle) ?? .concise
+        autoDismissCardOnNewQuestion = try c.decodeIfPresent(Bool.self, forKey: .autoDismissCardOnNewQuestion) ?? true
+        meetingMode = try c.decodeIfPresent(Bool.self, forKey: .meetingMode) ?? false
+        answerLanguage = try c.decodeIfPresent(AnswerLanguage.self, forKey: .answerLanguage) ?? .en
+        translateMode = try c.decodeIfPresent(Bool.self, forKey: .translateMode) ?? false
+        uiLanguage = try c.decodeIfPresent(UILanguage.self, forKey: .uiLanguage) ?? .zh
+        didChooseUILanguage = try c.decodeIfPresent(Bool.self, forKey: .didChooseUILanguage) ?? true
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(apiProvider, forKey: .apiProvider)
+        try c.encode(model, forKey: .model)
+        try c.encode(systemPrompt, forKey: .systemPrompt)
+        try c.encode(useRealtimeAllInOne, forKey: .useRealtimeAllInOne)
+        try c.encode(responseStyle, forKey: .responseStyle)
+        try c.encode(autoDismissCardOnNewQuestion, forKey: .autoDismissCardOnNewQuestion)
+        try c.encode(meetingMode, forKey: .meetingMode)
+        try c.encode(answerLanguage, forKey: .answerLanguage)
+        try c.encode(translateMode, forKey: .translateMode)
+        try c.encode(uiLanguage, forKey: .uiLanguage)
+        try c.encode(didChooseUILanguage, forKey: .didChooseUILanguage)
+    }
 }

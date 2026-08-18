@@ -34,11 +34,11 @@ struct ListeningLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text("过了么AI")
+                    Text(context.attributes.appName)
                         .font(.caption.weight(.semibold))
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.state.isListening ? "监听中" : "已暂停")
+                    Text(context.state.listeningLabel)
                         .font(.caption)
                 }
                 DynamicIslandExpandedRegion(.bottom) {

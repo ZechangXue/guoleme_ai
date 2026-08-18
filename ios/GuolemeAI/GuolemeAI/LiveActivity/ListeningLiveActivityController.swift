@@ -3,13 +3,14 @@ import Foundation
 import UIKit
 
 enum ListeningLiveActivityController {
-    static func start(modeLabel: String) {
+    static func start(appName: String, modeLabel: String, statusLine: String, listeningLabel: String) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let attributes = ListeningAttributes(appName: "过了么AI")
+        let attributes = ListeningAttributes(appName: appName)
         let state = ListeningAttributes.ContentState(
             isListening: true,
             modeLabel: modeLabel,
-            statusLine: "把手机靠近电脑扬声器"
+            statusLine: statusLine,
+            listeningLabel: listeningLabel
         )
         do {
             _ = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: nil))
@@ -18,11 +19,16 @@ enum ListeningLiveActivityController {
         }
     }
 
-    static func update(modeLabel: String, statusLine: String) {
+    static func update(modeLabel: String, statusLine: String, listeningLabel: String) {
         Task {
             for activity in Activity<ListeningAttributes>.activities {
                 await activity.update(.init(
-                    state: .init(isListening: true, modeLabel: modeLabel, statusLine: statusLine),
+                    state: .init(
+                        isListening: true,
+                        modeLabel: modeLabel,
+                        statusLine: statusLine,
+                        listeningLabel: listeningLabel
+                    ),
                     staleDate: nil
                 ))
             }

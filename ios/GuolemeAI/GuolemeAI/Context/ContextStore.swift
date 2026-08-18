@@ -51,15 +51,17 @@ final class ContextStore: ObservableObject {
         return result
     }
 
-    var promptStatusLine: String {
+    func promptStatusLine(language: UILanguage) -> String {
         let promptFiles = filesForPrompt()
         var parts: [String] = []
-        if promptFiles.contains(where: { $0.docType == .resume }) { parts.append("简历") }
-        if promptFiles.contains(where: { $0.docType == .jobDescription }) { parts.append("JD") }
-        if promptFiles.contains(where: { $0.docType == .qaNotes || $0.docType == .projectNotes }) { parts.append("笔记") }
-        if promptFiles.contains(where: { $0.docType == .meetingDoc }) { parts.append("项目文档") }
-        if parts.isEmpty { return "资料库为空，回答会比较笼统" }
-        return "已接入：\(parts.joined(separator: "、"))（\(promptFiles.map(\.rawText).joined().count) 字）"
+        if promptFiles.contains(where: { $0.docType == .resume }) { parts.append(L10n.t(.docResume, language: language)) }
+        if promptFiles.contains(where: { $0.docType == .jobDescription }) { parts.append(L10n.t(.docJD, language: language)) }
+        if promptFiles.contains(where: { $0.docType == .qaNotes || $0.docType == .projectNotes }) { parts.append(L10n.t(.docNotes, language: language)) }
+        if promptFiles.contains(where: { $0.docType == .meetingDoc }) { parts.append(L10n.t(.docProject, language: language)) }
+        if parts.isEmpty { return L10n.t(.contextEmpty, language: language) }
+        let joined = parts.joined(separator: language == .zh ? "、" : ", ")
+        let count = promptFiles.map(\.rawText).joined().count
+        return String(format: L10n.t(.contextConnected, language: language), joined, count)
     }
 
     func addFile(name: String, docType: ContextDocType, text: String) {

@@ -6,14 +6,14 @@ struct TranslateView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Button("翻译总结") {
+                Button(model.t(.translateSummary)) {
                     Task { await model.summarizeTranslate(withReply: false) }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AppTheme.accent)
                 .disabled(model.translateSummarizing)
 
-                Button("总结回应") {
+                Button(model.t(.translateReply)) {
                     Task { await model.summarizeTranslate(withReply: true) }
                 }
                 .buttonStyle(.borderedProminent)
@@ -22,13 +22,13 @@ struct TranslateView: View {
             }
 
             if model.listening {
-                Text("正在监听…点击按钮生成当前段落总结")
+                Text(model.t(.translateListening))
                     .font(.caption)
                     .foregroundStyle(AppTheme.success)
             }
 
             if model.translateEntries.isEmpty {
-                Text("点击「开始监听」后，可生成当前段落总结或回应")
+                Text(model.t(.translateIdle))
                     .font(.footnote)
                     .foregroundStyle(AppTheme.muted)
                     .frame(maxWidth: .infinity)

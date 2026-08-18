@@ -12,56 +12,82 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("答案语言") {
-                    Picker("语言", selection: languageBinding) {
+                Section {
+                    Picker(model.t(.uiLanguage), selection: uiLanguageBinding) {
+                        ForEach(UILanguage.allCases) { lang in
+                            Text(lang.pickerLabel).tag(lang)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text(model.t(.uiLanguageHint))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text(model.t(.uiLanguage))
+                }
+
+                Section {
+                    Picker(model.t(.answerLanguagePicker), selection: languageBinding) {
                         ForEach(AnswerLanguage.allCases) { lang in
                             Text(lang.label).tag(lang)
                         }
                     }
                     .pickerStyle(.segmented)
+                } header: {
+                    Text(model.t(.answerLanguage))
                 }
-                Section("模式") {
-                    Toggle("会议 / 项目介绍模式", isOn: meetingBinding)
-                    Toggle("翻译总结模式", isOn: translateBinding)
-                    Toggle("下一题自动切换卡片", isOn: autoDismissBinding)
-                    Toggle("OpenAI Realtime 一体（最低延迟）", isOn: realtimeBinding)
+
+                Section {
+                    Toggle(model.t(.meetingToggle), isOn: meetingBinding)
+                    Toggle(model.t(.translateToggle), isOn: translateBinding)
+                    Toggle(model.t(.autoDismiss), isOn: autoDismissBinding)
+                    Toggle(model.t(.realtimeToggle), isOn: realtimeBinding)
                         .disabled(model.settings.apiProvider != .openai)
+                } header: {
+                    Text(model.t(.sectionMode))
                 }
-                Section("服务商") {
-                    Picker("API", selection: providerBinding) {
+
+                Section {
+                    Picker(model.t(.apiPicker), selection: providerBinding) {
                         ForEach(ApiProvider.allCases) { p in
-                            Text(p.displayName).tag(p)
+                            Text(p.displayName(for: model.settings.uiLanguage)).tag(p)
                         }
                     }
-                    TextField("模型", text: modelBinding)
-                    SecureField("API Key", text: $apiKeyInput)
+                    TextField(model.t(.model), text: modelBinding)
+                    SecureField(model.t(.apiKey), text: $apiKeyInput)
                     HStack {
-                        Button("保存 Key") { saveKey() }
-                        Button(testing ? "测试中…" : "测试连接") {
+                        Button(model.t(.saveKey)) { saveKey() }
+                        Button(testing ? model.t(.testing) : model.t(.testConnection)) {
                             Task { await test() }
                         }
                         .disabled(testing)
                     }
                     if model.hasApiKey {
-                        Text("已保存 \(model.settings.apiProvider.displayName) Key")
+                        Text(model.t(.keySaved, model.settings.apiProvider.displayName(for: model.settings.uiLanguage)))
                             .foregroundStyle(AppTheme.success)
                     }
                     if let testMessage {
                         Text(testMessage).font(.footnote)
                     }
-                    Button("清除 Key", role: .destructive) {
+                    Button(model.t(.clearKey), role: .destructive) {
                         KeychainStore.delete(provider: model.settings.apiProvider)
                         model.refreshKeyStatus()
                     }
+                } header: {
+                    Text(model.t(.sectionProvider))
                 }
-                Section("提词风格") {
-                    Picker("风格", selection: styleBinding) {
-                        Text("极简一句").tag(ResponseStyle.concise)
-                        Text("可读展开").tag(ResponseStyle.readable)
+
+                Section {
+                    Picker(model.t(.stylePicker), selection: styleBinding) {
+                        Text(model.t(.styleConcise)).tag(ResponseStyle.concise)
+                        Text(model.t(.styleReadable)).tag(ResponseStyle.readable)
                     }
+                } header: {
+                    Text(model.t(.sectionStyle))
                 }
-                Section("导出") {
-                    Button(model.exportBusy ? "导出中…" : "导出本次会话 PDF") {
+
+                Section {
+                    Button(model.exportBusy ? model.t(.exporting) : model.t(.exportPDF)) {
                         Task {
                             if let url = await model.exportSession() {
                                 exportURL = url
@@ -70,20 +96,25 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(model.exportBusy || model.sessionLog.entries.isEmpty)
-                    Button("清空本机会话实录", role: .destructive) {
+                    Button(model.t(.clearSession), role: .destructive) {
                         model.sessionLog.clear()
                     }
+                } header: {
+                    Text(model.t(.sectionExport))
                 }
-                Section("关于") {
-                    Text("伴机模式：面试在电脑上进行，本 App 只用 iPhone 麦克风听外放声音，提词显示在手机上。不采集其他 App 音频，不覆盖第三方会议窗口。")
+
+                Section {
+                    Text(model.t(.aboutBody))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Link("隐私政策", destination: URL(string: "https://zechangxue.github.io/ai_interview/privacy.html")!)
+                    Link(model.t(.privacy), destination: URL(string: "https://zechangxue.github.io/ai_interview/privacy.html")!)
+                } header: {
+                    Text(model.t(.sectionAbout))
                 }
             }
             .scrollContentBackground(.hidden)
             .background(AppTheme.bg)
-            .navigationTitle("设置")
+            .navigationTitle(model.t(.settingsTitle))
             .sheet(isPresented: $showShare) {
                 if let exportURL {
                     ShareSheet(items: [exportURL])
@@ -92,6 +123,11 @@ struct SettingsView: View {
         }
     }
 
+    private var uiLanguageBinding: Binding<UILanguage> {
+        Binding(get: { model.settings.uiLanguage }, set: { value in
+            model.settingsStore.update { $0.uiLanguage = value }
+        })
+    }
     private var languageBinding: Binding<AnswerLanguage> {
         Binding(get: { model.settings.answerLanguage }, set: { value in
             model.settingsStore.update { $0.answerLanguage = value }
@@ -150,19 +186,19 @@ struct SettingsView: View {
         try? KeychainStore.save(provider: model.settings.apiProvider, key: value)
         apiKeyInput = ""
         model.refreshKeyStatus()
-        testMessage = "已保存"
+        testMessage = model.t(.keySavedShort)
     }
 
     private func test() async {
         testing = true
         defer { testing = false }
         guard let key = KeychainStore.load(provider: model.settings.apiProvider) else {
-            testMessage = "尚未保存 Key"
+            testMessage = model.t(.keyMissing)
             return
         }
         do {
             try await LLMClient().testConnection(provider: model.settings.apiProvider, apiKey: key, model: model.settings.model)
-            testMessage = "连接成功"
+            testMessage = model.t(.connectOK)
         } catch {
             testMessage = error.localizedDescription
         }

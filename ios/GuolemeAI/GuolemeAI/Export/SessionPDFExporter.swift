@@ -2,7 +2,7 @@ import PDFKit
 import UIKit
 
 enum SessionPDFExporter {
-    static func export(entries: [SessionInterviewEntry], summaryZh: String) -> URL? {
+    static func export(entries: [SessionInterviewEntry], summaryZh: String, language: UILanguage = .zh) -> URL? {
         let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
         let data = renderer.pdfData { ctx in
@@ -31,20 +31,20 @@ enum SessionPDFExporter {
             }
 
             newPage()
-            draw("过了么AI · 会话复盘", font: .boldSystemFont(ofSize: 20))
+            draw(L10n.t(.pdfTitle, language: language), font: .boldSystemFont(ofSize: 20))
             draw(DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .short), font: .systemFont(ofSize: 11), color: .darkGray)
-            draw("中文总结", font: .boldSystemFont(ofSize: 14))
+            draw(L10n.t(.pdfSummary, language: language), font: .boldSystemFont(ofSize: 14))
             draw(summaryZh, font: .systemFont(ofSize: 12))
 
             for (i, e) in entries.enumerated() {
                 draw("Q\(i + 1)", font: .boldSystemFont(ofSize: 14))
                 if let raw = e.interviewerQuestionRaw, !raw.isEmpty {
-                    draw("面试官原话：\(raw)", font: .systemFont(ofSize: 11), color: .darkGray)
+                    draw(String(format: L10n.t(.pdfInterviewer, language: language), raw), font: .systemFont(ofSize: 11), color: .darkGray)
                 }
-                draw("题摘要：\(e.questionZh)", font: .systemFont(ofSize: 12))
-                draw("一句回答：\(e.conciseAnswerEn)", font: .systemFont(ofSize: 12))
+                draw(String(format: L10n.t(.pdfQuestion, language: language), e.questionZh), font: .systemFont(ofSize: 12))
+                draw(String(format: L10n.t(.pdfConcise, language: language), e.conciseAnswerEn), font: .systemFont(ofSize: 12))
                 if let expanded = e.expandedAnswerEn, !expanded.isEmpty {
-                    draw("展开：\(expanded)", font: .systemFont(ofSize: 12))
+                    draw(String(format: L10n.t(.pdfExpanded, language: language), expanded), font: .systemFont(ofSize: 12))
                 }
             }
         }

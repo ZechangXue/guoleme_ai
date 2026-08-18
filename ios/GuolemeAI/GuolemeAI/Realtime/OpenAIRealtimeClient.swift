@@ -95,7 +95,7 @@ final class OpenAIRealtimeClient {
             try capture.start()
             mic = capture
         } catch {
-            onError?("无法启动麦克风：\(error.localizedDescription)")
+            onError?(error.localizedDescription)
         }
     }
 

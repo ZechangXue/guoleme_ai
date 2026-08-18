@@ -13,6 +13,7 @@ enum AppTheme {
 
 struct AudioLevelView: View {
     let level: Double
+    var label: String = "音量"
     var body: some View {
         HStack(spacing: 3) {
             ForEach(0..<8, id: \.self) { i in
@@ -22,6 +23,6 @@ struct AudioLevelView: View {
                     .frame(width: 4, height: 8 + CGFloat(i) * 2)
             }
         }
-        .accessibilityLabel("音量")
+        .accessibilityLabel(label)
     }
 }

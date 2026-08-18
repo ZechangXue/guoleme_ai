@@ -6,6 +6,7 @@ struct ListeningAttributes: ActivityAttributes {
         var isListening: Bool
         var modeLabel: String
         var statusLine: String
+        var listeningLabel: String
     }
 
     var appName: String

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AssistCardView: View {
+    @EnvironmentObject private var model: AppModel
     let assist: AssistJSON
     var streaming: Bool
     var meetingMode: Bool
@@ -16,13 +17,13 @@ struct AssistCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
-                Text(assist.questionZh?.nilIfEmpty ?? "生成中…")
+                Text(assist.questionZh?.nilIfEmpty ?? model.t(.generating))
                     .font(.headline)
                     .foregroundStyle(AppTheme.text)
                     .textSelection(.enabled)
                 Spacer()
                 if !meetingMode && (assist.expandedAnswerEn ?? "").isEmpty && !displayAsReadable {
-                    Button(readableLoading ? "…" : "可读答案") { onReadable() }
+                    Button(readableLoading ? "…" : model.t(.readableAnswer)) { onReadable() }
                         .font(.caption)
                         .buttonStyle(.bordered)
                         .disabled(readableLoading || assist.questionZh == nil || streaming)
@@ -36,21 +37,21 @@ struct AssistCardView: View {
             }
 
             section(
-                title: meetingMode ? "简答" : "CONCISE · 一句回答",
+                title: meetingMode ? model.t(.brief) : model.t(.concise),
                 body: assist.conciseAnswerEn,
                 italic: true,
                 showCursor: streaming && (assist.expandedAnswerEn ?? "").isEmpty
             )
             if showExpanded {
                 section(
-                    title: meetingMode ? "详解" : "EXPANDED · 展开回答",
+                    title: meetingMode ? model.t(.detail) : model.t(.expanded),
                     body: assist.expandedAnswerEn,
                     italic: false,
                     showCursor: streaming
                 )
             } else if !assist.keywordsEn.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("KEYWORDS · 英文关键词")
+                    Text(model.t(.keywords))
                         .font(.caption)
                         .foregroundStyle(AppTheme.muted)
                     FlowKeywords(words: assist.keywordsEn)
@@ -82,10 +83,10 @@ struct AssistCardView: View {
                         .lineSpacing(codeLike ? 2 : 4)
                         .textSelection(.enabled)
                 } else if showCursor || streaming {
-                    Text("生成中…")
+                    Text(model.t(.generating))
                         .foregroundStyle(AppTheme.muted)
                 } else {
-                    Text("（未生成）")
+                    Text(model.t(.notGenerated))
                         .foregroundStyle(AppTheme.muted)
                 }
                 if showCursor {

@@ -33,6 +33,18 @@ final class AppModel: ObservableObject {
 
     var settings: AppSettings { settingsStore.settings }
 
+    func t(_ key: L10n.Key, _ args: CVarArg...) -> String {
+        let template = L10n.t(key, language: settings.uiLanguage)
+        if args.isEmpty { return template }
+        return String(format: template, arguments: args)
+    }
+
+    var modeLabel: String {
+        if settings.translateMode { return t(.modeTranslate) }
+        if settings.meetingMode { return t(.modeMeeting) }
+        return t(.modeInterview)
+    }
+
     init() {
         refreshKeyStatus()
         settingsStore.objectWillChange.sink { [weak self] _ in
@@ -53,10 +65,13 @@ final class AppModel: ObservableObject {
         hasApiKey = KeychainStore.hasKey(provider: settings.apiProvider)
     }
 
-    var modeLabel: String {
-        if settings.translateMode { return "翻译总结" }
-        if settings.meetingMode { return "会议模式" }
-        return "面试提词"
+    private func startLiveActivity() {
+        ListeningLiveActivityController.start(
+            appName: t(.appName),
+            modeLabel: modeLabel,
+            statusLine: t(.liveHoldNearSpeaker),
+            listeningLabel: t(.liveListening)
+        )
     }
 
     func toggleListening() {
@@ -69,7 +84,7 @@ final class AppModel: ObservableObject {
         do {
             let granted = await requestMic()
             guard granted else {
-                statusMessage = "需要麦克风权限才能听电脑外放的声音"
+                statusMessage = t(.needMic)
                 return
             }
         }
@@ -80,13 +95,13 @@ final class AppModel: ObservableObject {
         }
 
         guard let apiKey = KeychainStore.load(provider: settings.apiProvider) else {
-            statusMessage = "请先在设置中保存 API Key"
+            statusMessage = t(.needAPIKey)
             return
         }
 
         listening = true
         UIApplication.shared.isIdleTimerDisabled = true
-        ListeningLiveActivityController.start(modeLabel: modeLabel)
+        startLiveActivity()
 
         let useRealtime = settings.apiProvider == .openai && settings.useRealtimeAllInOne
         if useRealtime {
@@ -118,7 +133,11 @@ final class AppModel: ObservableObject {
         displayAsReadable = false
         streamStopped = false
         if listening {
-            ListeningLiveActivityController.update(modeLabel: modeLabel, statusLine: "继续监听")
+            ListeningLiveActivityController.update(
+                modeLabel: modeLabel,
+                statusLine: t(.continueListening),
+                listeningLabel: t(.liveListening)
+            )
         }
     }
 
@@ -160,11 +179,11 @@ final class AppModel: ObservableObject {
     func answerFromImage(_ image: UIImage) async {
         guard !imageBusy else { return }
         guard let vision = resolveVisionClient() else {
-            statusMessage = "识图需要 OpenAI 或 Gemini 的 API Key（当前服务商不支持看图）"
+            statusMessage = t(.visionNeedKey)
             return
         }
         guard let jpeg = ImagePrep.jpegForVision(image) else {
-            statusMessage = "无法处理这张图片，请换一张或靠近屏幕重拍"
+            statusMessage = t(.imageBad)
             return
         }
 
@@ -173,8 +192,9 @@ final class AppModel: ObservableObject {
         streamStopped = false
         displayAsReadable = true
         streaming = true
-        currentAssist = AssistJSON(questionZh: "正在识图…")
-        statusMessage = "正在识图出题…"
+        let recognizing = t(.recognizingQuestion)
+        currentAssist = AssistJSON(questionZh: recognizing)
+        statusMessage = t(.recognizingStatus)
 
         let system = PromptCatalog.screenshotSystemPrompt(userSystemPrompt: settings.systemPrompt)
 
@@ -190,9 +210,9 @@ final class AppModel: ObservableObject {
                 var assist = chunk.partial.fillingMissingAnswers()
                 if chunk.done {
                     if AppConstants.isNoiseOrUnrecognized(assist.questionZh) || !assist.hasContent {
-                        self.statusMessage = "没看清题目，请靠近屏幕、对焦后再拍"
+                        self.statusMessage = self.t(.imageUnclear)
                         self.streaming = false
-                        if self.currentAssist?.questionZh == "正在识图…" {
+                        if self.currentAssist?.questionZh == recognizing {
                             self.currentAssist = nil
                         }
                         return
@@ -206,7 +226,7 @@ final class AppModel: ObservableObject {
             }
 
             if var card = currentAssist, card.needsCodingSolution {
-                statusMessage = "正在生成完整代码…"
+                statusMessage = t(.generatingCode)
                 streaming = true
                 let language = card.inferredCodeLanguage
                 let user = """
@@ -232,10 +252,10 @@ final class AppModel: ObservableObject {
             }
         } catch {
             streaming = false
-            if currentAssist?.questionZh == "正在识图…" {
+            if currentAssist?.questionZh == recognizing {
                 currentAssist = nil
             }
-            statusMessage = "识图失败：\(error.localizedDescription)"
+            statusMessage = t(.imageFail, error.localizedDescription)
         }
     }
 
@@ -271,15 +291,15 @@ final class AppModel: ObservableObject {
         let pcm = translateAudio.takeAll()
         let minBytes = Int(AppConstants.realtimeSampleRate * 2 * 0.4)
         guard pcm.count >= minBytes else {
-            pushTranslate("（未检测到有效语音）", streaming: false)
+            pushTranslate(t(.noSpeech), streaming: false)
             return
         }
         guard let openaiKey = KeychainStore.load(provider: .openai) else {
-            pushTranslate("（未配置 OpenAI API Key，无法转写音频）", streaming: false)
+            pushTranslate(t(.noOpenAIKey), streaming: false)
             return
         }
         guard let apiKey = KeychainStore.load(provider: settings.apiProvider) else {
-            pushTranslate("（未配置 API Key，无法翻译）", streaming: false)
+            pushTranslate(t(.noAPIKey), streaming: false)
             return
         }
         translateSummarizing = true
@@ -288,7 +308,7 @@ final class AppModel: ObservableObject {
             let result = try await WhisperClient.transcribe(pcm: pcm, sampleRate: Int(AppConstants.realtimeSampleRate), apiKey: openaiKey)
             let transcript = result.text
             if transcript.count < 5 {
-                pushTranslate("（未检测到有效语音）", streaming: false)
+                pushTranslate(t(.noSpeech), streaming: false)
                 return
             }
             let replyLanguage = inferReplyLanguage(transcript: transcript, whisperLanguage: result.language)
@@ -313,7 +333,7 @@ final class AppModel: ObservableObject {
                 }
             }
         } catch {
-            pushTranslate("（翻译失败：\(error.localizedDescription)）", streaming: false)
+            pushTranslate(t(.translateFail, error.localizedDescription), streaming: false)
         }
     }
 
@@ -321,7 +341,7 @@ final class AppModel: ObservableObject {
         exportBusy = true
         defer { exportBusy = false }
         let transcript = sessionLog.transcriptForSummary()
-        var summary = "（无实录内容）"
+        var summary = t(.noSessionContent)
         if !transcript.isEmpty, let apiKey = KeychainStore.load(provider: settings.apiProvider) {
             summary = (try? await llm.sessionSummary(
                 provider: settings.apiProvider,
@@ -330,7 +350,7 @@ final class AppModel: ObservableObject {
                 transcript: transcript
             )) ?? summary
         }
-        return SessionPDFExporter.export(entries: sessionLog.entries, summaryZh: summary)
+        return SessionPDFExporter.export(entries: sessionLog.entries, summaryZh: summary, language: settings.uiLanguage)
     }
 
     private func startRealtime(apiKey: String) {
@@ -390,7 +410,7 @@ final class AppModel: ObservableObject {
             try mic.start()
             fallbackMic = mic
         } catch {
-            statusMessage = "无法启动麦克风：\(error.localizedDescription)"
+            statusMessage = t(.micFail, error.localizedDescription)
             stopListening()
         }
     }
@@ -398,7 +418,7 @@ final class AppModel: ObservableObject {
     private func handleFallbackSegment(_ pcm: Data, apiKey: String) async {
         guard listening, !settings.translateMode else { return }
         guard let openaiKey = KeychainStore.load(provider: .openai) ?? (settings.apiProvider == .openai ? apiKey : nil) else {
-            statusMessage = "备用路径需要 OpenAI Key 做 Whisper 转写"
+            statusMessage = t(.fallbackNeedOpenAI)
             return
         }
         do {
@@ -447,7 +467,7 @@ final class AppModel: ObservableObject {
     private func startTranslateListening() {
         listening = true
         UIApplication.shared.isIdleTimerDisabled = true
-        ListeningLiveActivityController.start(modeLabel: modeLabel)
+        startLiveActivity()
         translateAudio.reset()
         let mic = MicCapture(sampleRate: AppConstants.realtimeSampleRate)
         let audio = translateAudio
@@ -461,7 +481,7 @@ final class AppModel: ObservableObject {
             try mic.start()
             translateMic = mic
         } catch {
-            statusMessage = "无法启动麦克风：\(error.localizedDescription)"
+            statusMessage = t(.micFail, error.localizedDescription)
             stopListening()
         }
     }

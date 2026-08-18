@@ -21,6 +21,7 @@
 		B0000000000000000000000C /* PromptBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000C /* PromptBuilder.swift */; };
 		B0000000000000000000000D /* PromptCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000D /* PromptCatalog.swift */; };
 		B0000000000000000000002C /* ImagePrep.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000002C /* ImagePrep.swift */; };
+		B0000000000000000000002D /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000002D /* L10n.swift */; };
 		B0000000000000000000000E /* ContextStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000E /* ContextStore.swift */; };
 		B0000000000000000000000F /* DocumentImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000F /* DocumentImporter.swift */; };
 		B00000000000000000000010 /* ZipReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000010 /* ZipReader.swift */; };
@@ -87,6 +88,7 @@
 		F0000000000000000000000C /* PromptBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptBuilder.swift; sourceTree = "<group>"; };
 		F0000000000000000000000D /* PromptCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptCatalog.swift; sourceTree = "<group>"; };
 		F0000000000000000000002C /* ImagePrep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrep.swift; sourceTree = "<group>"; };
+		F0000000000000000000002D /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
 		F0000000000000000000000E /* ContextStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextStore.swift; sourceTree = "<group>"; };
 		F0000000000000000000000F /* DocumentImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentImporter.swift; sourceTree = "<group>"; };
 		F00000000000000000000010 /* ZipReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipReader.swift; sourceTree = "<group>"; };
@@ -266,6 +268,7 @@
 			isa = PBXGroup;
 			children = (
 				F00000000000000000000014 /* Theme.swift */,
+				F0000000000000000000002D /* L10n.swift */,
 				F00000000000000000000015 /* ListenView.swift */,
 				F00000000000000000000016 /* AssistCardView.swift */,
 				F00000000000000000000017 /* ContextView.swift */,
@@ -422,6 +425,7 @@
 				B0000000000000000000000C /* PromptBuilder.swift in Sources */,
 				B0000000000000000000000D /* PromptCatalog.swift in Sources */,
 				B0000000000000000000002C /* ImagePrep.swift in Sources */,
+				B0000000000000000000002D /* L10n.swift in Sources */,
 				B0000000000000000000000E /* ContextStore.swift in Sources */,
 				B0000000000000000000000F /* DocumentImporter.swift in Sources */,
 				B00000000000000000000010 /* ZipReader.swift in Sources */,
