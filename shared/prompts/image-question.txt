@@ -1,0 +1,1 @@
+Read the selected screenshot as the current question/input. If it is captions or text, answer it normally. If it contains code, solve or explain the code issue and include concrete code/fixes where useful. Return JSON only.

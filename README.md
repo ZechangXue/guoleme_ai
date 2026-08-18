@@ -7,6 +7,8 @@
 
 支持中英文面试：在 Settings 顶部一键切换答案语言，中英文组会/面试均可使用。
 
+**iOS 伴机版**（SwiftUI）源码在 [`ios/`](./ios/README.md)：面试在电脑上进行，iPhone 用麦克风听外放并在本机显示提词。需 Mac + Xcode 编译，上架说明见 [`ios/docs/AppStore-Review.md`](./ios/docs/AppStore-Review.md)。
+
 ---
 
 ## 核心功能

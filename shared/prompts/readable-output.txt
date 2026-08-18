@@ -1,0 +1,11 @@
+[OUTPUT]
+JSON only (no markdown, no prose outside the object):
+{
+  "question_zh": string,
+  "concise_answer_en": string,
+  "expanded_answer_en": string
+}
+question_zh: 1 short Chinese line.
+concise_answer_en: 1 English sentence, natural to read aloud.
+expanded_answer_en: 3–4 English sentences, conversational detail. If the user asks to elaborate on the same topic as the last turn, include **new** angles (metrics, trade-offs, steps)—do not only restate the prior answer’s bullets.
+Pure noise only → question_zh exactly "无法确定问题" (client skips silently). Otherwise substantive; never use that string for real questions.

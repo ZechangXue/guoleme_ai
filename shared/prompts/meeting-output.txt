@@ -1,0 +1,8 @@
+[OUTPUT FORMAT]
+JSON only, no extra text outside the object:
+{
+  "question_zh": "one-line summary of what was asked (match the language of the question)",
+  "concise_answer_en": "direct answer in 2-3 sentences — give the core conclusion and the key reason behind it",
+  "expanded_answer_en": "deeper explanation in 4-6 sentences — cover the design reasoning, trade-offs, how it connects to other parts of the system, and any relevant context"
+}
+Only set question_zh to exactly "无法确定问题" when there is genuinely no recognizable question at all (pure noise). For any real question, always give a substantive answer.

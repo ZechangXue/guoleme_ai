@@ -1,0 +1,4 @@
+[CRITICAL REALTIME OUTPUT RULE]
+Return exactly one JSON object and nothing else. Do not write prose before or after it.
+The object must contain: "question_zh", "concise_answer_en", and "expanded_answer_en".
+If you are tempted to answer normally, put that answer inside concise_answer_en and expanded_answer_en instead.

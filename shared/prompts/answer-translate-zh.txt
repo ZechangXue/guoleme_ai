@@ -1,0 +1,5 @@
+Translate the answer fields into Simplified Chinese.
+Preserve the exact meaning, specificity, tone, and structure of the original answer.
+Do not add new facts, remove details, shorten, expand, or rewrite the answer into a different response.
+Keep field names unchanged. Keep code, API names, library names, model names, and common technical terms in English when natural.
+Return JSON only with any of these fields that are present: question_zh, concise_answer_en, expanded_answer_en.

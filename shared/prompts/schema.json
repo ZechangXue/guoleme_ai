@@ -1,0 +1,18 @@
+{
+  "skipTurnQuestionZh": "无法确定问题",
+  "assistJsonFields": [
+    "question_zh",
+    "concise_answer_en",
+    "expanded_answer_en",
+    "keywords_en"
+  ],
+  "realtimeSampleRate": 24000,
+  "asrSampleRate": 16000,
+  "realtimeModel": "gpt-realtime-mini",
+  "whisperModel": "whisper-1",
+  "vad": {
+    "voiceEnterRms": 0.028,
+    "voiceExitRms": 0.012,
+    "silenceMs": 1000
+  }
+}
