@@ -20,6 +20,7 @@
 		B0000000000000000000000B /* ProviderConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000B /* ProviderConfig.swift */; };
 		B0000000000000000000000C /* PromptBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000C /* PromptBuilder.swift */; };
 		B0000000000000000000000D /* PromptCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000D /* PromptCatalog.swift */; };
+		B0000000000000000000002C /* ImagePrep.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000002C /* ImagePrep.swift */; };
 		B0000000000000000000000E /* ContextStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000E /* ContextStore.swift */; };
 		B0000000000000000000000F /* DocumentImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000F /* DocumentImporter.swift */; };
 		B00000000000000000000010 /* ZipReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000010 /* ZipReader.swift */; };
@@ -85,6 +86,7 @@
 		F0000000000000000000000B /* ProviderConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderConfig.swift; sourceTree = "<group>"; };
 		F0000000000000000000000C /* PromptBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptBuilder.swift; sourceTree = "<group>"; };
 		F0000000000000000000000D /* PromptCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptCatalog.swift; sourceTree = "<group>"; };
+		F0000000000000000000002C /* ImagePrep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePrep.swift; sourceTree = "<group>"; };
 		F0000000000000000000000E /* ContextStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextStore.swift; sourceTree = "<group>"; };
 		F0000000000000000000000F /* DocumentImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentImporter.swift; sourceTree = "<group>"; };
 		F00000000000000000000010 /* ZipReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipReader.swift; sourceTree = "<group>"; };
@@ -235,6 +237,7 @@
 				F0000000000000000000000B /* ProviderConfig.swift */,
 				F0000000000000000000000C /* PromptBuilder.swift */,
 				F0000000000000000000000D /* PromptCatalog.swift */,
+				F0000000000000000000002C /* ImagePrep.swift */,
 			);
 			path = LLM;
 			sourceTree = "<group>";
@@ -418,6 +421,7 @@
 				B0000000000000000000000B /* ProviderConfig.swift in Sources */,
 				B0000000000000000000000C /* PromptBuilder.swift in Sources */,
 				B0000000000000000000000D /* PromptCatalog.swift in Sources */,
+				B0000000000000000000002C /* ImagePrep.swift in Sources */,
 				B0000000000000000000000E /* ContextStore.swift in Sources */,
 				B0000000000000000000000F /* DocumentImporter.swift in Sources */,
 				B00000000000000000000010 /* ZipReader.swift in Sources */,

@@ -9,18 +9,23 @@ struct AssistCardView: View {
     var onClose: () -> Void
     var onReadable: () -> Void
 
+    private var showExpanded: Bool {
+        meetingMode || displayAsReadable || !(assist.expandedAnswerEn ?? "").isEmpty
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 Text(assist.questionZh?.nilIfEmpty ?? "生成中…")
                     .font(.headline)
                     .foregroundStyle(AppTheme.text)
+                    .textSelection(.enabled)
                 Spacer()
-                if !meetingMode && assist.expandedAnswerEn == nil {
+                if !meetingMode && (assist.expandedAnswerEn ?? "").isEmpty && !displayAsReadable {
                     Button(readableLoading ? "…" : "可读答案") { onReadable() }
                         .font(.caption)
                         .buttonStyle(.bordered)
-                        .disabled(readableLoading || assist.questionZh == nil)
+                        .disabled(readableLoading || assist.questionZh == nil || streaming)
                 }
                 Button(action: onClose) {
                     Image(systemName: "xmark")
@@ -30,9 +35,19 @@ struct AssistCardView: View {
                 }
             }
 
-            section(title: meetingMode ? "简答" : "CONCISE · 一句回答", body: assist.conciseAnswerEn, italic: true, showCursor: streaming && assist.expandedAnswerEn == nil)
-            if meetingMode || displayAsReadable || assist.expandedAnswerEn != nil {
-                section(title: meetingMode ? "详解" : "EXPANDED · 展开回答", body: assist.expandedAnswerEn, italic: false, showCursor: streaming)
+            section(
+                title: meetingMode ? "简答" : "CONCISE · 一句回答",
+                body: assist.conciseAnswerEn,
+                italic: true,
+                showCursor: streaming && (assist.expandedAnswerEn ?? "").isEmpty
+            )
+            if showExpanded {
+                section(
+                    title: meetingMode ? "详解" : "EXPANDED · 展开回答",
+                    body: assist.expandedAnswerEn,
+                    italic: false,
+                    showCursor: streaming
+                )
             } else if !assist.keywordsEn.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("KEYWORDS · 英文关键词")
@@ -52,18 +67,25 @@ struct AssistCardView: View {
     }
 
     private func section(title: String, body: String?, italic: Bool, showCursor: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let text = body?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let codeLike = Self.looksLikeCode(text)
+        return VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(AppTheme.muted)
             HStack(alignment: .bottom, spacing: 2) {
-                if let body, !body.isEmpty {
-                    Text(body)
-                        .italic(italic)
-                        .foregroundStyle(italic ? AppTheme.concise : AppTheme.text)
-                        .lineSpacing(4)
-                } else {
+                if !text.isEmpty {
+                    Text(text)
+                        .italic(italic && !codeLike)
+                        .font(codeLike ? .system(.footnote, design: .monospaced) : .body)
+                        .foregroundStyle(italic && !codeLike ? AppTheme.concise : AppTheme.text)
+                        .lineSpacing(codeLike ? 2 : 4)
+                        .textSelection(.enabled)
+                } else if showCursor || streaming {
                     Text("生成中…")
+                        .foregroundStyle(AppTheme.muted)
+                } else {
+                    Text("（未生成）")
                         .foregroundStyle(AppTheme.muted)
                 }
                 if showCursor {
@@ -74,6 +96,16 @@ struct AssistCardView: View {
                 }
             }
         }
+    }
+
+    private static func looksLikeCode(_ text: String) -> Bool {
+        text.contains("```")
+            || text.contains("class Solution")
+            || text.contains("def ")
+            || text.contains("public ")
+            || text.contains("func ")
+            || text.contains("SELECT ")
+            || text.contains("\n    ")
     }
 }
 

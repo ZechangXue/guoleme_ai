@@ -23,7 +23,7 @@ enum ProviderConfig {
         }
     }
 
-    static var isOpenAICompatible: (ApiProvider) -> Bool = { provider in
-        provider == .openai || provider == .deepseek || provider == .qwen
+    static var supportsVision: (ApiProvider) -> Bool = { provider in
+        provider == .openai || provider == .google
     }
 }

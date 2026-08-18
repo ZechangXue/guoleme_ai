@@ -25,6 +25,18 @@ enum PromptCatalog {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    static func screenshotSystemPrompt(userSystemPrompt: String) -> String {
+        """
+        \(conciseSystemPrompt(userSystemPrompt: userSystemPrompt))
+
+        [SCREENSHOT MODE]
+        The current question is a photo of a laptop/monitor (algorithm, interview Q, slide, error, caption).
+        You MUST fill concise_answer_en. Also fill expanded_answer_en.
+        For coding problems, expanded_answer_en must contain complete runnable code.
+        """
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func readableSystemPrompt(userSystemPrompt: String) -> String {
         "\(userSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines))\n\n\(readableOutput)"
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -182,6 +194,16 @@ enum PromptCatalog {
         3）候选人可重点巩固的建议。
         不要重复照抄原文，不要编造记录中未出现的问题。
         """,
-        "image-question": "Read the selected screenshot as the current question/input. If it is captions or text, answer it normally. If it contains code, solve or explain the code issue and include concrete code/fixes where useful. Return JSON only."
+        "image-question": """
+        Read the phone photo of a screen as the current question/input.
+        Return JSON only, fields in this exact order:
+        {"question_zh":"...","concise_answer_en":"...","expanded_answer_en":"...","keywords_en":["..."]}
+        Rules:
+        - Never leave concise_answer_en empty.
+        - Conceptual / interview question: concise_answer_en = 1–2 direct sentences; expanded_answer_en = 3–6 sentence explanation with a concrete example.
+        - Coding / LeetCode / bug / SQL: concise_answer_en = approach + complexity; expanded_answer_en MUST include a complete working solution (full code, not a sketch) plus a short explanation.
+        - Put real line breaks inside JSON strings (escaped). Do not wrap the whole JSON in markdown.
+        - If any readable question text is visible, never use "无法确定问题".
+        """
     ]
 }

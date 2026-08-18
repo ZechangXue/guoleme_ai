@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
     @Published var translateSummarizing = false
     @Published var exportBusy = false
     @Published var readableLoading = false
+    @Published var imageBusy = false
 
     private var realtime: OpenAIRealtimeClient?
     private var fallbackMic: MicCapture?
@@ -154,13 +155,24 @@ final class AppModel: ObservableObject {
     }
 
     func answerFromImage(_ image: UIImage) async {
-        guard let apiKey = KeychainStore.load(provider: settings.apiProvider) else {
-            statusMessage = "请先配置 API Key"
+        guard !imageBusy else { return }
+        guard let vision = resolveVisionClient() else {
+            statusMessage = "识图需要 OpenAI 或 Gemini 的 API Key（当前服务商不支持看图）"
             return
         }
-        guard let jpeg = image.jpegData(compressionQuality: 0.8) else { return }
+        guard let jpeg = ImagePrep.jpegForVision(image) else {
+            statusMessage = "无法处理这张图片，请换一张或靠近屏幕重拍"
+            return
+        }
+
+        imageBusy = true
+        defer { imageBusy = false }
+        streamStopped = false
+        displayAsReadable = true
+        streaming = true
+        currentAssist = AssistJSON(questionZh: "正在识图…")
         statusMessage = "正在识图出题…"
-        let meeting = PromptBuilder.meetingDocContent(files: contextStore.files)
+
         let system: String
         if settings.meetingMode {
             system = PromptBuilder.buildMeetingSystemContent(
@@ -170,7 +182,7 @@ final class AppModel: ObservableObject {
             )
         } else {
             system = PromptBuilder.buildSystemContent(
-                systemPrompt: PromptCatalog.conciseSystemPrompt(userSystemPrompt: settings.systemPrompt),
+                systemPrompt: PromptCatalog.screenshotSystemPrompt(userSystemPrompt: settings.systemPrompt),
                 files: contextStore.files,
                 questionsHistory: contextStore.questionsHistory,
                 questionRaw: "[SCREENSHOT INPUT]\nUse the screenshot image as the current question/input.",
@@ -180,20 +192,52 @@ final class AppModel: ObservableObject {
                 notesText: contextStore.notesText
             )
         }
+
         do {
-            var assist = try await llm.assistFromImage(
-                provider: settings.apiProvider,
-                apiKey: apiKey,
-                model: settings.model,
+            try await llm.assistFromImage(
+                provider: vision.provider,
+                apiKey: vision.apiKey,
+                model: vision.model,
                 systemContent: system,
                 imageJPEG: jpeg
-            )
-            assist = try await maybeTranslate(assist, apiKey: apiKey)
-            applyAssist(assist, transcript: nil, done: true)
-            statusMessage = nil
+            ) { @MainActor [weak self] chunk in
+                guard let self else { return }
+                var assist = chunk.partial.fillingMissingAnswers()
+                if chunk.done {
+                    if AppConstants.isNoiseOrUnrecognized(assist.questionZh) || !assist.hasContent {
+                        self.statusMessage = "没看清题目，请靠近屏幕、对焦后再拍"
+                        self.streaming = false
+                        if self.currentAssist?.questionZh == "正在识图…" {
+                            self.currentAssist = nil
+                        }
+                        return
+                    }
+                    assist = (try? await self.maybeTranslate(assist, apiKey: vision.apiKey)) ?? assist
+                    self.statusMessage = nil
+                }
+                self.applyAssist(assist, transcript: "[screenshot]", done: chunk.done, fromScreenshot: true)
+            }
         } catch {
-            statusMessage = error.localizedDescription
+            streaming = false
+            if currentAssist?.questionZh == "正在识图…" {
+                currentAssist = nil
+            }
+            statusMessage = "识图失败：\(error.localizedDescription)"
         }
+    }
+
+    private func resolveVisionClient() -> (provider: ApiProvider, apiKey: String, model: String)? {
+        if ProviderConfig.supportsVision(settings.apiProvider),
+           let apiKey = KeychainStore.load(provider: settings.apiProvider) {
+            return (settings.apiProvider, apiKey, settings.model)
+        }
+        if let apiKey = KeychainStore.load(provider: .openai) {
+            return (.openai, apiKey, ProviderConfig.defaultModel(for: .openai))
+        }
+        if let apiKey = KeychainStore.load(provider: .google) {
+            return (.google, apiKey, ProviderConfig.defaultModel(for: .google))
+        }
+        return nil
     }
 
     func summarizeTranslate(withReply: Bool) async {
@@ -383,14 +427,17 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func applyAssist(_ partial: AssistJSON, transcript: String?, done: Bool) {
+    private func applyAssist(_ partial: AssistJSON, transcript: String?, done: Bool, fromScreenshot: Bool = false) {
         if streamStopped { return }
-        if AppConstants.isNoiseOrUnrecognized(partial.questionZh) {
+        if !fromScreenshot, AppConstants.isNoiseOrUnrecognized(partial.questionZh) {
             if done { streaming = false }
             return
         }
-        if settings.autoDismissCardOnNewQuestion, currentAssist != nil, done || partial.questionZh != nil {
+        if !fromScreenshot, settings.autoDismissCardOnNewQuestion, currentAssist != nil, done || partial.questionZh != nil {
             displayAsReadable = false
+        }
+        if fromScreenshot {
+            displayAsReadable = true
         }
         var merged = currentAssist ?? AssistJSON()
         if let q = partial.questionZh, !q.isEmpty { merged.questionZh = q }

@@ -2,6 +2,7 @@ import Foundation
 
 final class StreamingJSONParser {
     private var accumulated = ""
+    var rawText: String { accumulated }
     private var lastConciseLen = 0
     private var lastExpandedLen = 0
     private var emittedQuestion = false
@@ -59,12 +60,21 @@ final class StreamingJSONParser {
             }
         }
 
+        if let value = partialStringField("thinking_zh", in: accumulated) {
+            let val = unescape(value)
+            if !val.isEmpty {
+                partial.thinkingZh = val
+                hasUpdate = true
+            }
+        }
+
         if done {
             if let json = extractObject(accumulated),
                let obj = try? JSONDecoder().decode(AssistJSON.self, from: json) {
                 if let q = obj.questionZh { partial.questionZh = q.trimmingCharacters(in: .whitespacesAndNewlines) }
                 if let c = obj.conciseAnswerEn { partial.conciseAnswerEn = c.trimmingCharacters(in: .whitespacesAndNewlines) }
                 if let e = obj.expandedAnswerEn { partial.expandedAnswerEn = e.trimmingCharacters(in: .whitespacesAndNewlines) }
+                if let t = obj.thinkingZh { partial.thinkingZh = t.trimmingCharacters(in: .whitespacesAndNewlines) }
                 if !obj.keywordsEn.isEmpty { partial.keywordsEn = obj.keywordsEn }
                 hasUpdate = true
             } else if !hasUpdate {

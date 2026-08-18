@@ -137,31 +137,52 @@ final class LLMClient {
         apiKey: String,
         model: String,
         systemContent: String,
-        imageJPEG: Data
-    ) async throws -> AssistJSON {
+        imageJPEG: Data,
+        onChunk: @escaping (AssistStreamChunk) async -> Void
+    ) async throws {
         let b64 = imageJPEG.base64EncodedString()
         if provider == .google {
             let raw = try await geminiImage(apiKey: apiKey, model: model, system: systemContent, jpegBase64: b64)
-            return decodeAssist(raw)
+            let assist = decodeAssist(raw).fillingMissingAnswers()
+            await onChunk(AssistStreamChunk(partial: assist, done: true, interviewerTranscript: nil))
+            return
         }
-        let raw = try await chatCompletion(
+
+        let parser = StreamingJSONParser()
+        try await streamChatSSE(
             provider: provider,
             apiKey: apiKey,
             model: model,
-            messages: [
-                ["role": "system", "content": systemContent],
-                [
-                    "role": "user",
-                    "content": [
-                        ["type": "text", "text": PromptCatalog.imageQuestion],
-                        ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(b64)"]]
+            body: [
+                "model": model,
+                "stream": true,
+                "temperature": 0.2,
+                "max_tokens": 4000,
+                "response_format": ["type": "json_object"],
+                "messages": [
+                    ["role": "system", "content": systemContent],
+                    [
+                        "role": "user",
+                        "content": [
+                            ["type": "text", "text": PromptCatalog.imageQuestion],
+                            ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(b64)", "detail": "high"]]
+                        ]
                     ]
                 ]
             ],
-            json: true,
-            stream: false
-        )
-        return decodeAssist(raw)
+            timeout: 180
+        ) { delta, done in
+            if !delta.isEmpty, let partial = parser.appendDelta(delta) {
+                await onChunk(AssistStreamChunk(partial: partial, done: false, interviewerTranscript: nil))
+            }
+            if done {
+                if let finished = parser.finish() {
+                    await onChunk(AssistStreamChunk(partial: finished.fillingMissingAnswers(), done: true, interviewerTranscript: nil))
+                } else {
+                    await onChunk(AssistStreamChunk(partial: decodeAssist(parser.rawText).fillingMissingAnswers(), done: true, interviewerTranscript: nil))
+                }
+            }
+        }
     }
 
     private func streamJSON(
@@ -267,7 +288,8 @@ final class LLMClient {
         apiKey: String,
         model: String,
         body: [String: Any],
-        onDelta: @escaping (String, Bool) -> Void
+        timeout: TimeInterval = 90,
+        onDelta: @escaping (String, Bool) async -> Void
     ) async throws {
         let url = ProviderConfig.chatBaseURL(for: provider).appendingPathComponent("chat/completions")
         var request = URLRequest(url: url)
@@ -275,12 +297,18 @@ final class LLMClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = timeout
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
-            throw LLMError.http(code, "stream failed")
+            var err = ""
+            for try await line in bytes.lines {
+                err += line
+                if err.count > 2500 { break }
+            }
+            throw LLMError.http(code, err.isEmpty ? "stream failed" : err)
         }
 
         var finished = false
@@ -288,8 +316,10 @@ final class LLMClient {
             if line.hasPrefix("data: ") {
                 let payload = String(line.dropFirst(6))
                 if payload == "[DONE]" {
-                    finished = true
-                    onDelta("", true)
+                    if !finished {
+                        finished = true
+                        await onDelta("", true)
+                    }
                     break
                 }
                 guard let data = payload.data(using: .utf8),
@@ -299,13 +329,13 @@ final class LLMClient {
                 let text = delta["content"] as? String ?? ""
                 let done = choices.first?["finish_reason"] != nil && !(choices.first?["finish_reason"] is NSNull)
                 if !text.isEmpty || done {
-                    onDelta(text, done)
+                    await onDelta(text, done)
                 }
                 if done { finished = true }
             }
         }
         if !finished {
-            onDelta("", true)
+            await onDelta("", true)
         }
     }
 
@@ -342,10 +372,11 @@ final class LLMClient {
                     ["inlineData": ["mimeType": "image/jpeg", "data": jpegBase64]]
                 ]
             ]],
-            "generationConfig": ["temperature": 0.2, "responseMimeType": "application/json"]
+            "generationConfig": ["temperature": 0.2, "maxOutputTokens": 4096, "responseMimeType": "application/json"]
         ]
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 180
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -365,14 +396,25 @@ final class LLMClient {
     }
 
     private func decodeAssist(_ raw: String) -> AssistJSON {
-        if let data = raw.data(using: .utf8), let obj = try? JSONDecoder().decode(AssistJSON.self, from: data) {
-            return obj
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let data = trimmed.data(using: .utf8), let obj = try? JSONDecoder().decode(AssistJSON.self, from: data) {
+            return obj.fillingMissingAnswers()
         }
-        if let start = raw.firstIndex(of: "{"), let end = raw.lastIndex(of: "}"),
-           let data = String(raw[start...end]).data(using: .utf8),
+        if let start = trimmed.firstIndex(of: "{"), let end = trimmed.lastIndex(of: "}"),
+           let data = String(trimmed[start...end]).data(using: .utf8),
            let obj = try? JSONDecoder().decode(AssistJSON.self, from: data) {
-            return obj
+            return obj.fillingMissingAnswers()
         }
-        return AssistJSON(questionZh: AppConstants.skipTurnQuestionZh)
+        if let data = trimmed.data(using: .utf8),
+           let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            return AssistJSON(
+                questionZh: dict["question_zh"] as? String,
+                conciseAnswerEn: dict["concise_answer_en"] as? String,
+                expandedAnswerEn: dict["expanded_answer_en"] as? String,
+                keywordsEn: (dict["keywords_en"] as? [Any])?.map { String(describing: $0) } ?? [],
+                thinkingZh: dict["thinking_zh"] as? String
+            ).fillingMissingAnswers()
+        }
+        return AssistJSON()
     }
 }

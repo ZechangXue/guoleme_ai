@@ -38,9 +38,12 @@ struct ListenView: View {
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task {
+                defer { photoItem = nil }
                 if let data = try? await item.loadTransferable(type: Data.self),
                    let image = UIImage(data: data) {
                     await model.answerFromImage(image)
+                } else {
+                    model.statusMessage = "无法读取相册图片，请换一张再试"
                 }
             }
         }
@@ -88,15 +91,17 @@ struct ListenView: View {
 
             HStack(spacing: 10) {
                 PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label("相册看题", systemImage: "photo")
+                    Label(model.imageBusy ? "识图中…" : "相册看题", systemImage: "photo")
                 }
                 .buttonStyle(.bordered)
+                .disabled(model.imageBusy)
                 Button {
                     showCamera = true
                 } label: {
-                    Label("拍摄屏幕", systemImage: "camera")
+                    Label(model.imageBusy ? "识图中…" : "拍摄屏幕", systemImage: "camera")
                 }
                 .buttonStyle(.bordered)
+                .disabled(model.imageBusy)
             }
             .font(.footnote)
         }
@@ -132,6 +137,7 @@ struct CameraPicker: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.allowsEditing = false
         picker.delegate = context.coordinator
         return picker
     }
@@ -147,7 +153,7 @@ struct CameraPicker: UIViewControllerRepresentable {
             parent.dismiss()
         }
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-            parent.image = info[.originalImage] as? UIImage
+            parent.image = (info[.editedImage] as? UIImage) ?? (info[.originalImage] as? UIImage)
             parent.dismiss()
         }
     }

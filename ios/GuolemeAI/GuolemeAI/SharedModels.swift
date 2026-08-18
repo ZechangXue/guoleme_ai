@@ -92,17 +92,55 @@ struct AssistJSON: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        questionZh = try c.decodeIfPresent(String.self, forKey: .questionZh)
-        conciseAnswerEn = try c.decodeIfPresent(String.self, forKey: .conciseAnswerEn)
-        expandedAnswerEn = try c.decodeIfPresent(String.self, forKey: .expandedAnswerEn)
-        keywordsEn = try c.decodeIfPresent([String].self, forKey: .keywordsEn) ?? []
-        thinkingZh = try c.decodeIfPresent(String.self, forKey: .thinkingZh)
+        questionZh = Self.decodeString(c, .questionZh)
+        conciseAnswerEn = Self.decodeString(c, .conciseAnswerEn)
+        expandedAnswerEn = Self.decodeString(c, .expandedAnswerEn)
+        thinkingZh = Self.decodeString(c, .thinkingZh)
+        keywordsEn = Self.decodeStringArray(c, .keywordsEn)
     }
 
     var hasContent: Bool {
         !(questionZh ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !(conciseAnswerEn ?? "").isEmpty
             || !(expandedAnswerEn ?? "").isEmpty
+            || !(thinkingZh ?? "").isEmpty
+            || !keywordsEn.isEmpty
+    }
+
+    func fillingMissingAnswers() -> AssistJSON {
+        var next = self
+        if (next.conciseAnswerEn ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let thinking = next.thinkingZh?.trimmingCharacters(in: .whitespacesAndNewlines), !thinking.isEmpty {
+                next.conciseAnswerEn = thinking
+            } else if let expanded = next.expandedAnswerEn?.trimmingCharacters(in: .whitespacesAndNewlines), !expanded.isEmpty {
+                next.conciseAnswerEn = String(expanded.prefix(240))
+            }
+        }
+        if (next.questionZh ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, next.hasContent {
+            next.questionZh = "屏幕题目"
+        }
+        return next
+    }
+
+    private static func decodeString(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> String? {
+        if let value = try? c.decodeIfPresent(String.self, forKey: key) {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        return nil
+    }
+
+    private static func decodeStringArray(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> [String] {
+        if let arr = try? c.decodeIfPresent([String].self, forKey: key) {
+            return arr.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        }
+        if let one = try? c.decodeIfPresent(String.self, forKey: key) {
+            return one
+                .split(whereSeparator: { $0 == "," || $0 == "、" || $0 == "\n" })
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+        return []
     }
 }
 
