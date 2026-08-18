@@ -171,7 +171,7 @@ final class LLMClient {
                 ]
             ],
             timeout: 180
-        ) { delta, done in
+        ) { [self] delta, done in
             if !delta.isEmpty, let partial = parser.appendDelta(delta) {
                 await onChunk(AssistStreamChunk(partial: partial, done: false, interviewerTranscript: nil))
             }
@@ -179,7 +179,7 @@ final class LLMClient {
                 if let finished = parser.finish() {
                     await onChunk(AssistStreamChunk(partial: finished.fillingMissingAnswers(), done: true, interviewerTranscript: nil))
                 } else {
-                    await onChunk(AssistStreamChunk(partial: decodeAssist(parser.rawText).fillingMissingAnswers(), done: true, interviewerTranscript: nil))
+                    await onChunk(AssistStreamChunk(partial: self.decodeAssist(parser.rawText).fillingMissingAnswers(), done: true, interviewerTranscript: nil))
                 }
             }
         }
