@@ -173,25 +173,7 @@ final class AppModel: ObservableObject {
         currentAssist = AssistJSON(questionZh: "正在识图…")
         statusMessage = "正在识图出题…"
 
-        let system: String
-        if settings.meetingMode {
-            system = PromptBuilder.buildMeetingSystemContent(
-                files: contextStore.files,
-                questionRaw: "[SCREENSHOT INPUT]\nUse the screenshot image as the current question/input.",
-                summaries: contextStore.answerSummaries
-            )
-        } else {
-            system = PromptBuilder.buildSystemContent(
-                systemPrompt: PromptCatalog.screenshotSystemPrompt(userSystemPrompt: settings.systemPrompt),
-                files: contextStore.files,
-                questionsHistory: contextStore.questionsHistory,
-                questionRaw: "[SCREENSHOT INPUT]\nUse the screenshot image as the current question/input.",
-                summaries: contextStore.answerSummaries,
-                resumeText: contextStore.resumeText,
-                jdText: contextStore.jdText,
-                notesText: contextStore.notesText
-            )
-        }
+        let system = PromptCatalog.screenshotSystemPrompt(userSystemPrompt: settings.systemPrompt)
 
         do {
             try await llm.assistFromImage(
@@ -214,8 +196,36 @@ final class AppModel: ObservableObject {
                     }
                     assist = (try? await self.maybeTranslate(assist, apiKey: vision.apiKey)) ?? assist
                     self.statusMessage = nil
+                    self.applyAssist(assist, transcript: "[screenshot]", done: false, fromScreenshot: true)
+                    return
                 }
-                self.applyAssist(assist, transcript: "[screenshot]", done: chunk.done, fromScreenshot: true)
+                self.applyAssist(assist, transcript: "[screenshot]", done: false, fromScreenshot: true)
+            }
+
+            if var card = currentAssist, card.needsCodingSolution {
+                statusMessage = "正在生成完整代码…"
+                streaming = true
+                let language = card.inferredCodeLanguage
+                let user = """
+                Problem: \(card.questionZh ?? "coding problem from screenshot")
+                Approach already shown: \(card.conciseAnswerEn ?? "")
+                Write the complete \(language) solution now.
+                """
+                let code = try await llm.completePlain(
+                    provider: vision.provider,
+                    apiKey: vision.apiKey,
+                    model: vision.model,
+                    system: PromptCatalog.screenshotCode,
+                    user: user,
+                    maxTokens: 2500
+                ).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !code.isEmpty {
+                    card.expandedAnswerEn = Self.stripCodeFences(code)
+                }
+                statusMessage = nil
+                applyAssist(card, transcript: "[screenshot]", done: true, fromScreenshot: true)
+            } else if currentAssist != nil {
+                applyAssist(currentAssist ?? AssistJSON(), transcript: "[screenshot]", done: true, fromScreenshot: true)
             }
         } catch {
             streaming = false
@@ -224,6 +234,20 @@ final class AppModel: ObservableObject {
             }
             statusMessage = "识图失败：\(error.localizedDescription)"
         }
+    }
+
+    private static func stripCodeFences(_ raw: String) -> String {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("```") {
+            if let firstNewline = text.firstIndex(of: "\n") {
+                text = String(text[text.index(after: firstNewline)...])
+            }
+            if text.hasSuffix("```") {
+                text = String(text.dropLast(3))
+            }
+            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return text
     }
 
     private func resolveVisionClient() -> (provider: ApiProvider, apiKey: String, model: String)? {
@@ -460,12 +484,17 @@ final class AppModel: ObservableObject {
 
     private func maybeTranslate(_ assist: AssistJSON, apiKey: String) async throws -> AssistJSON {
         guard settings.answerLanguage == .zh else { return assist }
-        return try await llm.translateAnswersToChinese(
+        let code = AssistJSON.looksLikeCode(assist.expandedAnswerEn) ? assist.expandedAnswerEn : nil
+        var translated = try await llm.translateAnswersToChinese(
             provider: settings.apiProvider,
             apiKey: apiKey,
             model: settings.model,
             assist: assist
         )
+        if let code {
+            translated.expandedAnswerEn = code
+        }
+        return translated
     }
 
     private func pushTranslate(_ text: String, streaming: Bool) {

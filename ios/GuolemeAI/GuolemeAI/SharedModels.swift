@@ -122,6 +122,43 @@ struct AssistJSON: Codable, Equatable {
         return next
     }
 
+    var needsCodingSolution: Bool {
+        isCodingProblem && !Self.looksLikeCode(expandedAnswerEn)
+    }
+
+    var isCodingProblem: Bool {
+        let blob = "\(questionZh ?? "") \(conciseAnswerEn ?? "") \(expandedAnswerEn ?? "") \(keywordsEn.joined(separator: " "))"
+        let keys = [
+            "leetcode", "listnode", "class solution", "c++",
+            "链表", "二叉树", "动态规划", "单调栈",
+            "linked list", "binary tree", "two sum", "add two numbers",
+            "vector<", "treenode", "hackerrank"
+        ]
+        let lower = blob.lowercased()
+        return keys.contains { lower.contains($0) }
+    }
+
+    var inferredCodeLanguage: String {
+        let blob = "\(questionZh ?? "") \(conciseAnswerEn ?? "")"
+        if blob.contains("C++") || blob.localizedCaseInsensitiveContains("c++") { return "C++" }
+        if blob.localizedCaseInsensitiveContains("python") { return "Python" }
+        if blob.localizedCaseInsensitiveContains("java") { return "Java" }
+        if blob.localizedCaseInsensitiveContains("golang") || blob.range(of: "\\bGo\\b", options: .regularExpression) != nil { return "Go" }
+        if blob.localizedCaseInsensitiveContains("javascript") || blob.localizedCaseInsensitiveContains("typescript") { return "JavaScript" }
+        if blob.localizedCaseInsensitiveContains("sql") { return "SQL" }
+        return "the language shown in the screenshot"
+    }
+
+    static func looksLikeCode(_ raw: String?) -> Bool {
+        let text = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count >= 40 else { return false }
+        let keys = [
+            "class Solution", "ListNode", "TreeNode", "#include", "vector<",
+            "def ", "public ", "func ", "SELECT ", "```", "->", "for (", "while ("
+        ]
+        return keys.contains { text.contains($0) }
+    }
+
     private static func decodeString(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> String? {
         if let value = try? c.decodeIfPresent(String.self, forKey: key) {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)

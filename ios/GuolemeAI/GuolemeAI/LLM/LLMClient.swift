@@ -109,6 +109,31 @@ final class LLMClient {
         }
     }
 
+    func completePlain(
+        provider: ApiProvider,
+        apiKey: String,
+        model: String,
+        system: String,
+        user: String,
+        maxTokens: Int = 2500
+    ) async throws -> String {
+        if provider == .google {
+            return try await geminiGenerate(apiKey: apiKey, model: model, system: system, user: user, json: false)
+        }
+        return try await chatCompletion(
+            provider: provider,
+            apiKey: apiKey,
+            model: model,
+            messages: [
+                ["role": "system", "content": system],
+                ["role": "user", "content": user]
+            ],
+            json: false,
+            stream: false,
+            maxTokens: maxTokens
+        )
+    }
+
     func sessionSummary(
         provider: ApiProvider,
         apiKey: String,
@@ -254,7 +279,8 @@ final class LLMClient {
         model: String,
         messages: [[String: Any]],
         json: Bool,
-        stream: Bool
+        stream: Bool,
+        maxTokens: Int? = nil
     ) async throws -> String {
         var body: [String: Any] = [
             "model": model,
@@ -263,9 +289,11 @@ final class LLMClient {
             "stream": stream
         ]
         if json { body["response_format"] = ["type": "json_object"] }
+        if let maxTokens { body["max_tokens"] = maxTokens }
         let url = ProviderConfig.chatBaseURL(for: provider).appendingPathComponent("chat/completions")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 120
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

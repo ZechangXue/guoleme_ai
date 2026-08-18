@@ -26,16 +26,33 @@ enum PromptCatalog {
     }
 
     static func screenshotSystemPrompt(userSystemPrompt: String) -> String {
-        """
-        \(conciseSystemPrompt(userSystemPrompt: userSystemPrompt))
-
-        [SCREENSHOT MODE]
-        The current question is a photo of a laptop/monitor (algorithm, interview Q, slide, error, caption).
-        You MUST fill concise_answer_en. Also fill expanded_answer_en.
-        For coding problems, expanded_answer_en must contain complete runnable code.
-        """
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+        _ = userSystemPrompt
+        return screenshotSystem
     }
+
+    static let screenshotSystem = """
+    You answer questions photographed from a computer or phone screen.
+
+    Return JSON only:
+    {"question_zh":"...","concise_answer_en":"...","expanded_answer_en":"..."}
+
+    question_zh: one Chinese line naming the problem.
+    concise_answer_en: short approach / definition. 2–4 sentences is enough.
+    expanded_answer_en: REQUIRED, never empty.
+    - Coding / LeetCode / algorithm / SQL / bug: put the COMPLETE working solution in the language shown on screen (C++, Python, Java, etc.). Include the full class/function the editor expects (e.g. class Solution). Not a sketch, not bullet steps.
+    - Other questions: 3–6 sentence explanation with an example.
+
+    If any problem text is visible, never set question_zh to "无法确定问题".
+    """
+
+    static let screenshotCode = """
+    Write a complete, working coding-interview solution.
+
+    Output only the code (plus 1–2 lines of complexity comments).
+    Match the language requested or shown (C++, Python, Java, Go, etc.).
+    If it is LeetCode-style, fill the given signature such as class Solution.
+    Do not output JSON, markdown fences, or an approach essay.
+    """
 
     static func readableSystemPrompt(userSystemPrompt: String) -> String {
         "\(userSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines))\n\n\(readableOutput)"
