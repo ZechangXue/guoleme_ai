@@ -508,7 +508,11 @@ final class AppModel: ObservableObject {
         currentAssist = merged
         streaming = !done
         if let q = merged.questionZh {
-            ListeningLiveActivityController.update(modeLabel: modeLabel, statusLine: q)
+            ListeningLiveActivityController.update(
+                modeLabel: modeLabel,
+                statusLine: q,
+                listeningLabel: t(.liveListening)
+            )
         }
         if done {
             streaming = false
