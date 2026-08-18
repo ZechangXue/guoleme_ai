@@ -11,7 +11,7 @@ struct ContextView: View {
         NavigationStack {
             Form {
                 Section("使用说明") {
-                    Text("先粘贴或导入 JD / 简历 / 笔记。会议模式请上传项目文档。资料只存在本机。")
+                    Text("面试模式会用简历 / JD / 笔记来针对性作答。组会模式优先用「会议 / 项目文档」；如果还没传项目文档，会回退使用已入库的简历和笔记，避免空泛回答。资料只存在本机。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

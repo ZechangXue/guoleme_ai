@@ -31,10 +31,24 @@ enum PromptBuilder {
 
     static func interviewDocContent(files: [ContextFile]) -> String {
         let types: Set<ContextDocType> = [.resume, .jobDescription, .qaNotes, .projectNotes]
-        let maxChars = 200_000
+        return joinDocuments(files.filter { types.contains($0.docType) }, maxChars: 200_000)
+    }
+
+    static func meetingDocContent(files: [ContextFile]) -> (full: String, hasDocuments: Bool) {
+        let meetingFiles = files.filter { $0.docType == .meetingDoc }
+        if !meetingFiles.isEmpty {
+            let text = joinDocuments(meetingFiles, maxChars: 500_000)
+            return (text, !text.isEmpty)
+        }
+        // Windows 组会只用会议文档；若用户只传了简历/JD/笔记/项目介绍，回退用这些，避免空文档泛泛作答。
+        let fallback = joinDocuments(files, maxChars: 500_000)
+        return (fallback, !fallback.isEmpty)
+    }
+
+    private static func joinDocuments(_ files: [ContextFile], maxChars: Int) -> String {
         var parts: [String] = []
         var total = 0
-        for file in files where types.contains(file.docType) {
+        for file in files {
             let text = file.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
             let block = "=== \(file.docType.promptLabel): \(file.fileName) ===\n\(text)"
@@ -46,24 +60,6 @@ enum PromptBuilder {
             total += block.count
         }
         return parts.joined(separator: "\n\n")
-    }
-
-    static func meetingDocContent(files: [ContextFile]) -> (full: String, hasDocuments: Bool) {
-        let maxChars = 500_000
-        var parts: [String] = []
-        var total = 0
-        for file in files where file.docType == .meetingDoc {
-            let text = file.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
-            let block = "=== 文档: \(file.fileName) ===\n\(text)"
-            if total + block.count > maxChars {
-                parts.append("=== 文档: \(file.fileName) ===\n[文档过大，已截断至安全上限]")
-                break
-            }
-            parts.append(block)
-            total += block.count
-        }
-        return (parts.joined(separator: "\n\n"), !parts.isEmpty)
     }
 
     static func buildSystemContent(
@@ -92,6 +88,9 @@ enum PromptBuilder {
             \(documentContent)
             \(historyBlock)
             \(instructionBlock)
+
+            [GROUNDING]
+            Answer as this candidate using the documents above. Use real companies, titles, projects, dates, and tech. Do not invent a generic background.
 
             [CONVERSATION]
             \(recentConversation)
@@ -146,6 +145,9 @@ enum PromptBuilder {
             ====================
             \(docBlock)
 
+            [GROUNDING]
+            Use specific names, decisions, and facts from [DOCUMENT CONTENT]. If the files include a resume or notes, treat them as this person's / team's real background. Do not invent a generic facilitator answer.
+
             [CONVERSATION HISTORY]
             Use this to understand the ongoing discussion context. If the current question is a follow-up, build on what was already said.
             \(conversationBlock(summaries))
@@ -168,8 +170,10 @@ enum PromptBuilder {
         let jd = files.first(where: { $0.docType == .jobDescription })?.rawText
         let notes = files.filter { $0.docType == .qaNotes || $0.docType == .projectNotes }.map(\.rawText).joined(separator: "\n\n")
         let docContextBlock: String
+        let hasDocs: Bool
         if !documentContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             docContextBlock = "[DOCUMENT CONTENT]\n\(documentContent)"
+            hasDocs = true
         } else {
             docContextBlock = """
             [RESUME]
@@ -181,6 +185,9 @@ enum PromptBuilder {
             [NOTES]
             \(cap(notes, max: 8000))
             """
+            hasDocs = !(resume ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !(jd ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
 
         return """
@@ -189,8 +196,10 @@ enum PromptBuilder {
         ====================
         [MODE]
         Realtime audio: interviewer speaks; after a pause, respond with JSON only (see [OUTPUT] in system prompt).
+        You are this candidate. Ground every answer in the resume / JD / notes below. Use real company names, titles, projects, dates, and tech from the documents. Never give a generic “software engineer” story when those documents are present.
 
         \(docContextBlock)
+        \(hasDocs ? "" : "\n(No resume/JD/notes uploaded — answers will be generic until the user adds them in 资料.)\n")
 
         \(PromptCatalog.contextInstructionRealtime)
 
@@ -219,6 +228,9 @@ enum PromptBuilder {
 
         ====================
         \(docBlock)
+
+        [GROUNDING]
+        Use specific names, decisions, and facts from [DOCUMENT CONTENT]. If the files include a resume or notes, treat them as this person's / team's real background.
 
         [CONVERSATION HISTORY]
         Use this to understand the ongoing discussion context. If the current question is a follow-up, build on what was already said.

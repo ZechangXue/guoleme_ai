@@ -32,6 +32,36 @@ final class ContextStore: ObservableObject {
         return fromFiles.nilIfEmpty ?? pasteNotes
     }
 
+    /// Files plus unsaved paste fields, matching Windows resume/JD/notes injection.
+    func filesForPrompt() -> [ContextFile] {
+        var result = files
+        func missing(_ type: ContextDocType) -> Bool {
+            !result.contains { $0.docType == type }
+        }
+        if missing(.resume), !pasteResume.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append(ContextFile(id: "paste-resume", fileName: "粘贴的简历", docType: .resume, rawText: pasteResume, createdAt: 0))
+        }
+        if missing(.jobDescription), !pasteJD.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append(ContextFile(id: "paste-jd", fileName: "粘贴的JD", docType: .jobDescription, rawText: pasteJD, createdAt: 0))
+        }
+        if !result.contains(where: { $0.docType == .qaNotes || $0.docType == .projectNotes }),
+           !pasteNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append(ContextFile(id: "paste-notes", fileName: "粘贴的笔记", docType: .qaNotes, rawText: pasteNotes, createdAt: 0))
+        }
+        return result
+    }
+
+    var promptStatusLine: String {
+        let promptFiles = filesForPrompt()
+        var parts: [String] = []
+        if promptFiles.contains(where: { $0.docType == .resume }) { parts.append("简历") }
+        if promptFiles.contains(where: { $0.docType == .jobDescription }) { parts.append("JD") }
+        if promptFiles.contains(where: { $0.docType == .qaNotes || $0.docType == .projectNotes }) { parts.append("笔记") }
+        if promptFiles.contains(where: { $0.docType == .meetingDoc }) { parts.append("项目文档") }
+        if parts.isEmpty { return "资料库为空，回答会比较笼统" }
+        return "已接入：\(parts.joined(separator: "、"))（\(promptFiles.map(\.rawText).joined().count) 字）"
+    }
+
     func addFile(name: String, docType: ContextDocType, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

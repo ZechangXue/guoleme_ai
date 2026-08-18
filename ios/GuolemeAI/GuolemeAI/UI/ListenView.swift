@@ -68,6 +68,9 @@ struct ListenView: View {
                     Text(model.modeLabel)
                         .font(.caption)
                         .foregroundStyle(AppTheme.muted)
+                    Text(model.contextStore.promptStatusLine)
+                        .font(.caption2)
+                        .foregroundStyle(AppTheme.success.opacity(0.9))
                 }
                 Spacer()
                 AudioLevelView(level: model.audioLevel)
@@ -114,6 +117,9 @@ struct ListenView: View {
             Text("把 iPhone 靠近电脑扬声器，开始监听后会在本机显示提词。不要覆盖其他 App，也不采集系统内部音频。")
                 .font(.footnote)
                 .foregroundStyle(AppTheme.muted)
+            Text(model.contextStore.promptStatusLine)
+                .font(.footnote)
+                .foregroundStyle(AppTheme.success)
             VStack(alignment: .leading, spacing: 6) {
                 Label("手机麦克风对准电脑外放", systemImage: "iphone.and.arrow.forward")
                 Label("外放音量开大，减少环境噪音", systemImage: "speaker.wave.2")

@@ -40,6 +40,9 @@ final class AppModel: ObservableObject {
         }.store(in: &cancellables)
         contextStore.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
+            DispatchQueue.main.async {
+                self?.refreshRealtimeInstructions()
+            }
         }.store(in: &cancellables)
         sessionLog.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
@@ -126,7 +129,7 @@ final class AppModel: ObservableObject {
         defer { readableLoading = false }
         let system = PromptBuilder.buildSystemContent(
             systemPrompt: PromptCatalog.readableSystemPrompt(userSystemPrompt: settings.systemPrompt),
-            files: contextStore.files,
+            files: contextStore.filesForPrompt(),
             questionsHistory: contextStore.questionsHistory,
             questionRaw: question,
             summaries: contextStore.answerSummaries,
@@ -348,13 +351,25 @@ final class AppModel: ObservableObject {
         }
         let instructions = PromptBuilder.buildRealtimeInstructions(
             systemPrompt: PromptCatalog.conciseSystemPrompt(userSystemPrompt: settings.systemPrompt),
-            files: contextStore.files,
+            files: contextStore.filesForPrompt(),
             questionsHistory: contextStore.questionsHistory,
             summaries: contextStore.answerSummaries,
             meetingMode: settings.meetingMode
         )
         client.start(apiKey: apiKey, model: ProviderConfig.realtimeModel(for: .openai) ?? "gpt-realtime-mini", instructions: instructions)
         realtime = client
+    }
+
+    private func refreshRealtimeInstructions() {
+        guard listening, !settings.translateMode, realtime != nil else { return }
+        let instructions = PromptBuilder.buildRealtimeInstructions(
+            systemPrompt: PromptCatalog.conciseSystemPrompt(userSystemPrompt: settings.systemPrompt),
+            files: contextStore.filesForPrompt(),
+            questionsHistory: contextStore.questionsHistory,
+            summaries: contextStore.answerSummaries,
+            meetingMode: settings.meetingMode
+        )
+        realtime?.updateInstructions(instructions)
     }
 
     private func startFallback(apiKey: String) {
@@ -393,14 +408,14 @@ final class AppModel: ObservableObject {
             let system: String
             if settings.meetingMode {
                 system = PromptBuilder.buildMeetingSystemContent(
-                    files: contextStore.files,
+                    files: contextStore.filesForPrompt(),
                     questionRaw: text,
                     summaries: contextStore.answerSummaries
                 )
             } else {
                 system = PromptBuilder.buildSystemContent(
                     systemPrompt: PromptCatalog.conciseSystemPrompt(userSystemPrompt: settings.systemPrompt),
-                    files: contextStore.files,
+                    files: contextStore.filesForPrompt(),
                     questionsHistory: contextStore.questionsHistory,
                     questionRaw: text,
                     summaries: contextStore.answerSummaries,

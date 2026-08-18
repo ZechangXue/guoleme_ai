@@ -68,6 +68,17 @@ final class OpenAIRealtimeClient {
         session = nil
     }
 
+    func updateInstructions(_ instructions: String) {
+        guard running else { return }
+        send([
+            "type": "session.update",
+            "session": [
+                "type": "realtime",
+                "instructions": instructions
+            ]
+        ])
+    }
+
     private func startMic() {
         let capture = MicCapture(sampleRate: AppConstants.realtimeSampleRate)
         capture.onLevel = { [weak self] level in
