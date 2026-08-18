@@ -114,7 +114,14 @@ struct AssistJSON: Codable, Equatable {
                 next.conciseAnswerEn = thinking
             } else if let expanded = next.expandedAnswerEn?.trimmingCharacters(in: .whitespacesAndNewlines), !expanded.isEmpty {
                 next.conciseAnswerEn = String(expanded.prefix(240))
+            } else if !next.keywordsEn.isEmpty {
+                next.conciseAnswerEn = next.keywordsEn.joined(separator: "; ")
             }
+        }
+        if (next.expandedAnswerEn ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let thinking = next.thinkingZh?.trimmingCharacters(in: .whitespacesAndNewlines), !thinking.isEmpty,
+           thinking != next.conciseAnswerEn {
+            next.expandedAnswerEn = thinking
         }
         if (next.questionZh ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, next.hasContent {
             next.questionZh = "屏幕题目"

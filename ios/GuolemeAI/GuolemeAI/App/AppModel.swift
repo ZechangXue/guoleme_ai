@@ -478,11 +478,13 @@ final class AppModel: ObservableObject {
         if fromScreenshot {
             displayAsReadable = true
         }
-        var merged = currentAssist ?? AssistJSON()
+        var merged = (currentAssist ?? AssistJSON())
         if let q = partial.questionZh, !q.isEmpty { merged.questionZh = q }
         if let c = partial.conciseAnswerEn, !c.isEmpty { merged.conciseAnswerEn = c }
         if let e = partial.expandedAnswerEn, !e.isEmpty { merged.expandedAnswerEn = e }
+        if let t = partial.thinkingZh, !t.isEmpty { merged.thinkingZh = t }
         if !partial.keywordsEn.isEmpty { merged.keywordsEn = partial.keywordsEn }
+        merged = merged.fillingMissingAnswers()
         currentAssist = merged
         streaming = !done
         if let q = merged.questionZh {

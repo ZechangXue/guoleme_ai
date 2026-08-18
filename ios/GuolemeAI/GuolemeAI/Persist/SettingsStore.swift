@@ -16,9 +16,16 @@ final class SettingsStore: ObservableObject {
         if let data = try? Data(contentsOf: url),
            let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
             settings = decoded
+            migrateLegacySystemPromptIfNeeded()
         } else {
             settings = .default
         }
+    }
+
+    private func migrateLegacySystemPromptIfNeeded() {
+        let prompt = settings.systemPrompt
+        guard prompt.contains("thinking_zh"), prompt.contains("keywords_en"), prompt.contains("强制输出格式") else { return }
+        update { $0.systemPrompt = PromptCatalog.defaultSystem }
     }
 
     func update(_ mutate: (inout AppSettings) -> Void) {

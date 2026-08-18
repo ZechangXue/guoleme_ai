@@ -21,8 +21,24 @@ enum PromptCatalog {
     }
 
     static func conciseSystemPrompt(userSystemPrompt: String) -> String {
-        "\(userSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines))\n\n[OUTPUT]\n\(conciseOutput)"
+        let base = stripLegacyOutputSchema(userSystemPrompt)
+        return "\(base)\n\n[OUTPUT]\n\(conciseOutput)"
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func readableSystemPrompt(userSystemPrompt: String) -> String {
+        let base = stripLegacyOutputSchema(userSystemPrompt)
+        return "\(base)\n\n\(readableOutput)"
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func stripLegacyOutputSchema(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.contains("thinking_zh"), s.contains("keywords_en"),
+           let range = s.range(of: "强制输出格式") {
+            s = String(s[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return s.isEmpty ? defaultSystem : s
     }
 
     static func screenshotSystemPrompt(userSystemPrompt: String) -> String {
@@ -54,11 +70,6 @@ enum PromptCatalog {
     Do not output JSON, markdown fences, or an approach essay.
     """
 
-    static func readableSystemPrompt(userSystemPrompt: String) -> String {
-        "\(userSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines))\n\n\(readableOutput)"
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private static func load(_ name: String) -> String {
         let bundleCandidates = [
             Bundle.main.url(forResource: name, withExtension: "txt", subdirectory: "prompts"),
@@ -75,20 +86,10 @@ enum PromptCatalog {
 
     private static let fallbacks: [String: String] = [
         "default-system": """
-        你是“面试实时提词器助手”。你必须扮演一名非常专业、非常匹配目标岗位的候选者。你只会接收到：岗位JD摘要、候选人简历摘要、以及对方刚刚提出的面试问题（来自系统音频转写）。你不会得到候选人真实回答内容，因此你必须仅基于：JD/简历/历史提问 来给出“回答思路与英文关键词”。
-        强制输出格式：你必须只输出 JSON，且严格符合以下字段：
-        {
-          "question_zh": string,
-          "thinking_zh": string,
-          "keywords_en": string[]
-        }
-        规则：
-        - question_zh：用中文提炼问题核心，1句，不能冗长
-        - thinking_zh：用中文写 2-3 条要点，每条尽量短（不写长段落），让候选人按这些要点展开就能完整回答
-        - keywords_en：与 thinking_zh 严格一一对应且顺序一致：第 1 个关键词对应第 1 条思路、第 2 个对应第 2 条，以此类推；每条思路只提炼 1 个英文关键词/短语作为「采分点」；必须是面试官想听到的核心答题词（如 data drift、model fine-tuning），不要写泛泛话题词（如 LLM、RAG）；先写 thinking_zh，再按同一顺序写出 keywords_en，数量=思路条数，便于候选人按点作答、思绪不乱
-        - 不要输出任何多余解释、前后缀、markdown、代码块；必须是纯 JSON
-        - 不要让候选人去“澄清/重复/确认问题”，不要把回答思路写成让对方补充信息的提示。
-        - 仅当 question_raw 明显是纯噪声、乱码、与自然语言无关、听不出任何面试意图时：question_zh 必须恰好为「无法确定问题」（应用会静默丢弃该轮，不弹卡、继续听）。只要有可辨认的面试问题或片段，就必须正常提炼并作答，不得使用上述占位。
+        你是“面试实时提词器助手”。你必须扮演一名非常专业、非常匹配目标岗位的候选者。
+        你只会接收到：岗位 JD、候选人简历、笔记，以及对方刚刚提出的面试问题。
+        你必须仅基于这些材料作答：用简历里的学校、公司、职位、项目、技术栈、时间和结果，不要编造笼统的软件工程师套话。
+        不要让候选人去澄清或重复问题。只要听出面试意图，就直接给可朗读的完整回答。
         """,
         "readable-system": """
         [ROLE]

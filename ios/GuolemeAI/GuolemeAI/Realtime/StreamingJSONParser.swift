@@ -76,6 +76,14 @@ final class StreamingJSONParser {
                 if let e = obj.expandedAnswerEn { partial.expandedAnswerEn = e.trimmingCharacters(in: .whitespacesAndNewlines) }
                 if let t = obj.thinkingZh { partial.thinkingZh = t.trimmingCharacters(in: .whitespacesAndNewlines) }
                 if !obj.keywordsEn.isEmpty { partial.keywordsEn = obj.keywordsEn }
+                let filled = AssistJSON(
+                    questionZh: partial.questionZh,
+                    conciseAnswerEn: partial.conciseAnswerEn,
+                    expandedAnswerEn: partial.expandedAnswerEn,
+                    keywordsEn: partial.keywordsEn,
+                    thinkingZh: partial.thinkingZh
+                ).fillingMissingAnswers()
+                partial = filled
                 hasUpdate = true
             } else if !hasUpdate {
                 let answerText = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
