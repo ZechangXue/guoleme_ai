@@ -311,25 +311,45 @@ final class AppModel: ObservableObject {
                 pushTranslate(t(.noSpeech), streaming: false)
                 return
             }
-            let replyLanguage = inferReplyLanguage(transcript: transcript, whisperLanguage: result.language)
-            let system = withReply ? PromptCatalog.translateReply(language: replyLanguage) : PromptCatalog.translateSummary
-            let user = withReply
-                ? "回应语言：\(replyLanguage)\n\n对方原始语音转写（不是翻译后的内容）：\n\(transcript)"
-                : transcript
             let id = UUID()
             let stamp = Self.clockFormatter.string(from: Date())
-            translateEntries.insert(TranslateEntry(id: id, text: "", timestamp: stamp, streaming: true), at: 0)
-            try await llm.streamPlain(
-                provider: settings.apiProvider,
-                apiKey: apiKey,
-                model: settings.model,
-                system: system,
-                user: user
-            ) { [weak self] delta, done in
-                Task { @MainActor in
-                    guard let self, let idx = self.translateEntries.firstIndex(where: { $0.id == id }) else { return }
-                    self.translateEntries[idx].text += delta
-                    self.translateEntries[idx].streaming = !done
+            translateEntries.insert(TranslateEntry(id: id, text: withReply ? "总结：" : "", timestamp: stamp, streaming: true), at: 0)
+
+            if withReply {
+                let summary = try await llm.completePlain(
+                    provider: settings.apiProvider,
+                    apiKey: apiKey,
+                    model: settings.model,
+                    system: PromptCatalog.translateSummary,
+                    user: transcript
+                )
+                if let idx = translateEntries.firstIndex(where: { $0.id == id }) {
+                    translateEntries[idx].text = "总结：" + summary.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                let reply = try await llm.completePlain(
+                    provider: settings.apiProvider,
+                    apiKey: apiKey,
+                    model: settings.model,
+                    system: PromptCatalog.translateReply,
+                    user: transcript
+                )
+                if let idx = translateEntries.firstIndex(where: { $0.id == id }) {
+                    translateEntries[idx].text += "\n回应：" + reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                    translateEntries[idx].streaming = false
+                }
+            } else {
+                try await llm.streamPlain(
+                    provider: settings.apiProvider,
+                    apiKey: apiKey,
+                    model: settings.model,
+                    system: PromptCatalog.translateSummary,
+                    user: transcript
+                ) { [weak self] delta, done in
+                    Task { @MainActor in
+                        guard let self, let idx = self.translateEntries.firstIndex(where: { $0.id == id }) else { return }
+                        self.translateEntries[idx].text += delta
+                        self.translateEntries[idx].streaming = !done
+                    }
                 }
             }
         } catch {
@@ -548,25 +568,6 @@ final class AppModel: ObservableObject {
             ),
             at: 0
         )
-    }
-
-    private func inferReplyLanguage(transcript: String, whisperLanguage: String?) -> String {
-        let detected = (whisperLanguage ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if detected == "en" || detected == "eng" || detected == "english" || detected.contains("english") {
-            return "English"
-        }
-        if detected == "zh" || detected == "zho" || detected == "chi" || detected == "chinese"
-            || detected.contains("chinese") || detected.contains("mandarin") || detected.contains("cantonese") {
-            return "Chinese"
-        }
-        if !(whisperLanguage ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return whisperLanguage!.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let cjk = transcript.range(of: "[\\u{3400}-\\u{9fff}]", options: .regularExpression) != nil
-        let latin = (transcript.range(of: "[A-Za-z]{2,}", options: .regularExpression) != nil)
-        if latin && !cjk { return "English" }
-        if cjk { return "Chinese" }
-        return "English"
     }
 
     private func requestMic() async -> Bool {

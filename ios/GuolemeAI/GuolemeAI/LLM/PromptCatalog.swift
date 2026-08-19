@@ -11,14 +11,10 @@ enum PromptCatalog {
     static let realtimeOutputRule = load("realtime-output-rule")
     static let meetingOutput = load("meeting-output")
     static let translateSummary = load("translate-summary")
-    static let translateReplyTemplate = load("translate-reply")
+    static let translateReply = load("translate-reply")
     static let answerTranslateZh = load("answer-translate-zh")
     static let sessionSummary = load("session-summary")
     static let imageQuestion = load("image-question")
-
-    static func translateReply(language: String) -> String {
-        translateReplyTemplate.replacingOccurrences(of: "{{REPLY_LANGUAGE}}", with: language)
-    }
 
     static func conciseSystemPrompt(userSystemPrompt: String) -> String {
         let base = stripLegacyOutputSchema(userSystemPrompt)
@@ -183,21 +179,7 @@ enum PromptCatalog {
         Only set question_zh to exactly "无法确定问题" when there is genuinely no recognizable question at all (pure noise). For any real question, always give a substantive answer.
         """,
         "translate-summary": "把用户给出的语音转写内容总结成 1 到 2 句自然中文。只输出总结正文，不要标题、不要要点、不要原文、不要逐句翻译。自动合并 ASR 重复词和口头禅，保留必要的专有名词和缩写。",
-        "translate-reply": """
-        你是参会者的实时回应辅助。用户会提供“对方原始语音转写”和“回应语言”。
-
-        只输出两行：
-        总结：用一句自然中文概括对方核心意思。
-        回应：基于“对方原始语音转写”生成 1 到 2 句我可以直接照着读的回应。
-
-        硬性规则：
-        - 回应必须直接基于原始转写，不要基于中文总结生成回应。
-        - 回应必须使用指定的回应语言：{{REPLY_LANGUAGE}}。
-        - 如果回应语言是 English，“回应：”后面的内容必须是英文，不能出现中文句子。
-        - 不要输出要点、解释、原文或额外标题。
-        - 回应要贴合上下文，语气自然、专业、务实；先承接对方，再给出清晰立场或下一步建议。
-        - 自动合并 ASR 重复词和口头禅，保留必要的专有名词和缩写。
-        """,
+        "translate-reply": "根据对方的原始语音转写，生成 1 到 2 句我可以立刻在会议里照着读出口的回应。必须使用和转写相同的语言：英文转写就写英文，中文转写就写中文。先简短承接对方，再给出立场或下一步。只输出回应正文，不要标题、不要总结、不要翻译、不要解释。",
         "answer-translate-zh": """
         Translate the answer fields into Simplified Chinese.
         Preserve the exact meaning, specificity, tone, and structure of the original answer.
