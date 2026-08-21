@@ -287,19 +287,20 @@ final class AppModel: ObservableObject {
         return nil
     }
 
-    func summarizeTranslate(withReply: Bool) async {
-        let pcm = translateAudio.takeAll()
-        let minBytes = Int(AppConstants.realtimeSampleRate * 2 * 0.4)
-        guard pcm.count >= minBytes else {
-            pushTranslate(t(.noSpeech), streaming: false)
-            return
-        }
+    func summarizeTranslate(withReply: Bool, autoTriggered: Bool = false) async {
+        guard !translateSummarizing else { return }
         guard let openaiKey = KeychainStore.load(provider: .openai) else {
-            pushTranslate(t(.noOpenAIKey), streaming: false)
+            if !autoTriggered { pushTranslate(t(.noOpenAIKey), streaming: false) }
             return
         }
         guard let apiKey = KeychainStore.load(provider: settings.apiProvider) else {
-            pushTranslate(t(.noAPIKey), streaming: false)
+            if !autoTriggered { pushTranslate(t(.noAPIKey), streaming: false) }
+            return
+        }
+        let pcm = translateAudio.takeAll()
+        let minBytes = Int(AppConstants.realtimeSampleRate * 2 * 0.4)
+        guard pcm.count >= minBytes else {
+            if !autoTriggered { pushTranslate(t(.noSpeech), streaming: false) }
             return
         }
         translateSummarizing = true
@@ -308,11 +309,11 @@ final class AppModel: ObservableObject {
             let result = try await WhisperClient.transcribe(pcm: pcm, sampleRate: Int(AppConstants.realtimeSampleRate), apiKey: openaiKey)
             let transcript = result.text
             if transcript.count < 5 {
-                pushTranslate(t(.noSpeech), streaming: false)
+                if !autoTriggered { pushTranslate(t(.noSpeech), streaming: false) }
                 return
             }
             let id = UUID()
-            let stamp = Self.clockFormatter.string(from: Date())
+            let stamp = Self.clockFormatter.string(from: Date()) + (autoTriggered ? " · \(t(.translateAuto))" : "")
             translateEntries.insert(TranslateEntry(id: id, text: withReply ? "总结：" : "", timestamp: stamp, streaming: true), at: 0)
 
             if withReply {
@@ -355,6 +356,12 @@ final class AppModel: ObservableObject {
         } catch {
             pushTranslate(t(.translateFail, error.localizedDescription), streaming: false)
         }
+    }
+
+    private func flushTranslateIfNeeded() async {
+        guard listening, settings.translateMode, !translateSummarizing else { return }
+        guard translateAudio.reachedFlushLimit else { return }
+        await summarizeTranslate(withReply: false, autoTriggered: true)
     }
 
     func exportSession() async -> URL? {
@@ -494,8 +501,12 @@ final class AppModel: ObservableObject {
         mic.onLevel = { [weak self] level in
             Task { @MainActor in self?.audioLevel = level }
         }
-        mic.onPCM = { data in
+        mic.onPCM = { [weak self] data in
             audio.append(data)
+            guard audio.reachedFlushLimit else { return }
+            Task { @MainActor in
+                await self?.flushTranslateIfNeeded()
+            }
         }
         do {
             try mic.start()

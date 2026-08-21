@@ -246,6 +246,8 @@ enum AppConstants {
     static let skipTurnQuestionZh = "无法确定问题"
     static let realtimeSampleRate: Double = 24_000
     static let asrSampleRate: Double = 16_000
+    /// Translate-summary keeps at most this much audio; unused clicks auto-summarize at this mark.
+    static let translateFlushSeconds: Double = 90
     static let keychainService = "InterviewTeleprompterAI"
 
     static func isNoiseOrUnrecognized(_ question: String?) -> Bool {

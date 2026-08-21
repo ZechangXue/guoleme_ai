@@ -57,19 +57,29 @@ final class VoiceActivityDetector {
 final class TranslateAudioBuffer {
     private let lock = NSLock()
     private var pcm = Data()
-    private let maxBytes: Int
+    private let bytesPerSecond: Double
+    let flushSeconds: Double
 
-    init(maxSeconds: Double = 90, sampleRate: Double = AppConstants.realtimeSampleRate) {
-        self.maxBytes = max(Int(sampleRate * 2 * maxSeconds), 1)
+    init(maxSeconds: Double = AppConstants.translateFlushSeconds, sampleRate: Double = AppConstants.realtimeSampleRate) {
+        self.flushSeconds = maxSeconds
+        self.bytesPerSecond = max(sampleRate * 2, 1)
+    }
+
+    var durationSeconds: Double {
+        lock.lock()
+        let count = pcm.count
+        lock.unlock()
+        return Double(count) / bytesPerSecond
+    }
+
+    var reachedFlushLimit: Bool {
+        durationSeconds >= flushSeconds
     }
 
     func append(_ chunk: Data) {
         guard !chunk.isEmpty else { return }
         lock.lock()
         pcm.append(chunk)
-        if pcm.count > maxBytes {
-            pcm.removeFirst(pcm.count - maxBytes)
-        }
         lock.unlock()
     }
 

@@ -41,7 +41,7 @@ enum L10n {
         case sectionExport, exportPDF, exporting, clearSession
         case sectionAbout, aboutBody, privacy
         case translateSummary, translateReply
-        case translateListening, translateIdle
+        case translateListening, translateIdle, translateAuto
         case noSpeech, noOpenAIKey, noAPIKey, translateFail
         case needMic, needAPIKey
         case visionNeedKey, imageBad, recognizingStatus, imageUnclear, generatingCode, imageFail, albumFail
@@ -145,8 +145,9 @@ enum L10n {
         .privacy: [.zh: "隐私政策", .en: "Privacy policy"],
         .translateSummary: [.zh: "翻译总结", .en: "Summarize"],
         .translateReply: [.zh: "总结回应", .en: "Summarize & reply"],
-        .translateListening: [.zh: "正在监听…点击按钮生成当前段落总结", .en: "Listening… tap to summarize this segment"],
+        .translateListening: [.zh: "正在监听…满 90 秒会自动总结；也可随时点击按钮", .en: "Listening… auto-summarizes every 90s, or tap anytime"],
         .translateIdle: [.zh: "点击「开始监听」后，可生成当前段落总结或回应", .en: "Start listening, then generate a summary or reply"],
+        .translateAuto: [.zh: "自动", .en: "Auto"],
         .noSpeech: [.zh: "（未检测到有效语音）", .en: "(No valid speech detected)"],
         .noOpenAIKey: [.zh: "（未配置 OpenAI API Key，无法转写音频）", .en: "(OpenAI API key required for transcription)"],
         .noAPIKey: [.zh: "（未配置 API Key，无法翻译）", .en: "(API key required for translation)"],
