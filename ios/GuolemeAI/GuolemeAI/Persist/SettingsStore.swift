@@ -17,6 +17,7 @@ final class SettingsStore: ObservableObject {
            let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
             settings = decoded
             migrateLegacySystemPromptIfNeeded()
+            migrateDefaultChatModelIfNeeded()
         } else {
             settings = .default
         }
@@ -26,6 +27,13 @@ final class SettingsStore: ObservableObject {
         let prompt = settings.systemPrompt
         guard prompt.contains("thinking_zh"), prompt.contains("keywords_en"), prompt.contains("强制输出格式") else { return }
         update { $0.systemPrompt = PromptCatalog.defaultSystem }
+    }
+
+    private func migrateDefaultChatModelIfNeeded() {
+        let model = settings.model
+        let legacy = ["instant", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4o", "gpt-4.1"]
+        guard legacy.contains(model) else { return }
+        update { $0.model = ProviderConfig.defaultModel(for: .openai) }
     }
 
     func update(_ mutate: (inout AppSettings) -> Void) {

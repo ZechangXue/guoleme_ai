@@ -270,7 +270,7 @@ struct AppSettings: Codable, Equatable {
 
     static let `default` = AppSettings(
         apiProvider: .openai,
-        model: "gpt-4.1-mini",
+        model: "gpt-5-mini",
         systemPrompt: PromptCatalog.defaultSystem,
         useRealtimeAllInOne: true,
         responseStyle: .concise,

@@ -28,7 +28,8 @@ final class LLMClient {
                 ["role": "user", "content": "Reply with the single word pong."]
             ],
             json: false,
-            stream: false
+            stream: false,
+            maxTokens: 64
         )
     }
 
@@ -95,15 +96,18 @@ final class LLMClient {
             provider: provider,
             apiKey: apiKey,
             model: model,
-            body: [
-                "model": model,
-                "stream": true,
-                "temperature": 0.3,
-                "messages": [
-                    ["role": "system", "content": system],
-                    ["role": "user", "content": user]
+            body: {
+                var body: [String: Any] = [
+                    "model": model,
+                    "stream": true,
+                    "messages": [
+                        ["role": "system", "content": system],
+                        ["role": "user", "content": user]
+                    ]
                 ]
-            ]
+                ProviderConfig.applyOpenAIChatParams(to: &body, model: model, temperature: 0.3)
+                return body
+            }()
         ) { delta, done in
             onDelta(delta, done)
         }
@@ -178,23 +182,25 @@ final class LLMClient {
             provider: provider,
             apiKey: apiKey,
             model: model,
-            body: [
-                "model": model,
-                "stream": true,
-                "temperature": 0.2,
-                "max_tokens": 4000,
-                "response_format": ["type": "json_object"],
-                "messages": [
-                    ["role": "system", "content": systemContent],
-                    [
-                        "role": "user",
-                        "content": [
-                            ["type": "text", "text": PromptCatalog.imageQuestion],
-                            ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(b64)", "detail": "high"]]
+            body: {
+                var body: [String: Any] = [
+                    "model": model,
+                    "stream": true,
+                    "response_format": ["type": "json_object"],
+                    "messages": [
+                        ["role": "system", "content": systemContent],
+                        [
+                            "role": "user",
+                            "content": [
+                                ["type": "text", "text": PromptCatalog.imageQuestion],
+                                ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(b64)", "detail": "high"]]
+                            ]
                         ]
                     ]
                 ]
-            ],
+                ProviderConfig.applyOpenAIChatParams(to: &body, model: model, temperature: 0.2, maxTokens: 4000)
+                return body
+            }(),
             timeout: 180
         ) { [self] delta, done in
             if !delta.isEmpty, let partial = parser.appendDelta(delta) {
@@ -231,14 +237,16 @@ final class LLMClient {
             provider: provider,
             apiKey: apiKey,
             model: model,
-            body: [
-                "model": model,
-                "stream": true,
-                "temperature": 0.2,
-                "max_tokens": 1000,
-                "response_format": ["type": "json_object"],
-                "messages": [["role": "system", "content": system]]
-            ]
+            body: {
+                var body: [String: Any] = [
+                    "model": model,
+                    "stream": true,
+                    "response_format": ["type": "json_object"],
+                    "messages": [["role": "system", "content": system]]
+                ]
+                ProviderConfig.applyOpenAIChatParams(to: &body, model: model, temperature: 0.2, maxTokens: 1000)
+                return body
+            }()
         ) { delta, done in
             if !delta.isEmpty, let partial = parser.appendDelta(delta) {
                 onChunk(AssistStreamChunk(partial: partial, done: false, interviewerTranscript: nil))
@@ -285,11 +293,15 @@ final class LLMClient {
         var body: [String: Any] = [
             "model": model,
             "messages": messages,
-            "temperature": 0.2,
             "stream": stream
         ]
         if json { body["response_format"] = ["type": "json_object"] }
-        if let maxTokens { body["max_tokens"] = maxTokens }
+        ProviderConfig.applyOpenAIChatParams(
+            to: &body,
+            model: model,
+            temperature: 0.2,
+            maxTokens: maxTokens
+        )
         let url = ProviderConfig.chatBaseURL(for: provider).appendingPathComponent("chat/completions")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

@@ -3,7 +3,7 @@ import Foundation
 enum ProviderConfig {
     static func defaultModel(for provider: ApiProvider) -> String {
         switch provider {
-        case .openai: return "gpt-4.1-mini"
+        case .openai: return "gpt-5-mini"
         case .google: return "gemini-2.0-flash"
         case .deepseek: return "deepseek-chat"
         case .qwen: return "qwen-turbo"
@@ -25,5 +25,33 @@ enum ProviderConfig {
 
     static var supportsVision: (ApiProvider) -> Bool = { provider in
         provider == .openai || provider == .google
+    }
+
+    static func isGpt5Family(_ model: String) -> Bool {
+        model.lowercased().hasPrefix("gpt-5")
+    }
+
+    /// GPT-5：省略 temperature、改用 max_completion_tokens，并加 reasoning_effort。
+    static func applyOpenAIChatParams(
+        to body: inout [String: Any],
+        model: String,
+        temperature: Double? = nil,
+        maxTokens: Int? = nil
+    ) {
+        if isGpt5Family(model) {
+            body.removeValue(forKey: "temperature")
+            body.removeValue(forKey: "max_tokens")
+            body["reasoning_effort"] = model.lowercased().hasPrefix("gpt-5.") ? "none" : "minimal"
+            if let maxTokens {
+                body["max_completion_tokens"] = maxTokens
+            }
+        } else {
+            if let temperature {
+                body["temperature"] = temperature
+            }
+            if let maxTokens {
+                body["max_tokens"] = maxTokens
+            }
+        }
     }
 }

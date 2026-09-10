@@ -51,7 +51,7 @@ enum PromptCatalog {
     question_zh: one Chinese line naming the problem.
     concise_answer_en: short approach / definition. 2–4 sentences is enough.
     expanded_answer_en: REQUIRED, never empty.
-    - Coding / LeetCode / algorithm / SQL / bug: put the COMPLETE working solution in the language shown on screen (C++, Python, Java, etc.). Include the full class/function the editor expects (e.g. class Solution). Not a sketch, not bullet steps.
+    - Coding / LeetCode / algorithm / SQL / bug: put the COMPLETE working solution in the language shown on screen (C++, Python, Java, etc.). Include the full class/function the editor expects (e.g. class Solution). Not a sketch, not bullet steps. Preserve correct indentation (spaces or tabs) inside the JSON string via \\n and leading spaces — never left-align every line.
     - Other questions: 3–6 sentence explanation with an example.
 
     If any problem text is visible, never set question_zh to "无法确定问题".
@@ -63,6 +63,7 @@ enum PromptCatalog {
     Output only the code (plus 1–2 lines of complexity comments).
     Match the language requested or shown (C++, Python, Java, Go, etc.).
     If it is LeetCode-style, fill the given signature such as class Solution.
+    Preserve correct indentation with spaces (4 spaces for Python) or tabs as appropriate — never flatten code to column 0.
     Do not output JSON, markdown fences, or an approach essay.
     """
 
@@ -185,6 +186,7 @@ enum PromptCatalog {
         Preserve the exact meaning, specificity, tone, and structure of the original answer.
         Do not add new facts, remove details, shorten, expand, or rewrite the answer into a different response.
         Keep field names unchanged. Keep code, API names, library names, model names, and common technical terms in English when natural.
+        If a field contains source code, copy the code unchanged — preserve every indent space/tab and line break; only translate surrounding prose.
         Return JSON only with any of these fields that are present: question_zh, concise_answer_en, expanded_answer_en.
         """,
         "session-summary": """
@@ -202,6 +204,7 @@ enum PromptCatalog {
         - Never leave concise_answer_en empty.
         - Conceptual / interview question: concise_answer_en = 1–2 direct sentences; expanded_answer_en = 3–6 sentence explanation with a concrete example.
         - Coding / LeetCode / bug / SQL: concise_answer_en = approach + complexity; expanded_answer_en MUST include a complete working solution (full code, not a sketch) plus a short explanation.
+        - Inside JSON strings, preserve code indentation with spaces/\\t and line breaks as \\n — never flatten every line to the left margin.
         - Put real line breaks inside JSON strings (escaped). Do not wrap the whole JSON in markdown.
         - If any readable question text is visible, never use "无法确定问题".
         """
