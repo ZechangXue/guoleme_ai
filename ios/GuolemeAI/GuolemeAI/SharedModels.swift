@@ -267,6 +267,9 @@ struct AppSettings: Codable, Equatable {
     var translateMode: Bool
     var uiLanguage: UILanguage
     var didChooseUILanguage: Bool
+    var meetingScene: MeetingScene
+    var meetingTrigger: MeetingTrigger
+    var meetingTriggerKeywords: String
 
     static let `default` = AppSettings(
         apiProvider: .openai,
@@ -279,13 +282,17 @@ struct AppSettings: Codable, Equatable {
         answerLanguage: .en,
         translateMode: false,
         uiLanguage: .zh,
-        didChooseUILanguage: false
+        didChooseUILanguage: false,
+        meetingScene: .weekly,
+        meetingTrigger: .mention,
+        meetingTriggerKeywords: ""
     )
 
     enum CodingKeys: String, CodingKey {
         case apiProvider, model, systemPrompt, useRealtimeAllInOne, responseStyle
         case autoDismissCardOnNewQuestion, meetingMode, answerLanguage, translateMode
         case uiLanguage, didChooseUILanguage
+        case meetingScene, meetingTrigger, meetingTriggerKeywords
     }
 
     init(
@@ -299,7 +306,10 @@ struct AppSettings: Codable, Equatable {
         answerLanguage: AnswerLanguage,
         translateMode: Bool,
         uiLanguage: UILanguage,
-        didChooseUILanguage: Bool
+        didChooseUILanguage: Bool,
+        meetingScene: MeetingScene = .weekly,
+        meetingTrigger: MeetingTrigger = .mention,
+        meetingTriggerKeywords: String = ""
     ) {
         self.apiProvider = apiProvider
         self.model = model
@@ -312,6 +322,9 @@ struct AppSettings: Codable, Equatable {
         self.translateMode = translateMode
         self.uiLanguage = uiLanguage
         self.didChooseUILanguage = didChooseUILanguage
+        self.meetingScene = meetingScene
+        self.meetingTrigger = meetingTrigger
+        self.meetingTriggerKeywords = meetingTriggerKeywords
     }
 
     init(from decoder: Decoder) throws {
@@ -327,6 +340,9 @@ struct AppSettings: Codable, Equatable {
         translateMode = try c.decodeIfPresent(Bool.self, forKey: .translateMode) ?? false
         uiLanguage = try c.decodeIfPresent(UILanguage.self, forKey: .uiLanguage) ?? .zh
         didChooseUILanguage = try c.decodeIfPresent(Bool.self, forKey: .didChooseUILanguage) ?? true
+        meetingScene = (try? c.decodeIfPresent(MeetingScene.self, forKey: .meetingScene)) ?? .weekly
+        meetingTrigger = (try? c.decodeIfPresent(MeetingTrigger.self, forKey: .meetingTrigger)) ?? .mention
+        meetingTriggerKeywords = try c.decodeIfPresent(String.self, forKey: .meetingTriggerKeywords) ?? ""
     }
 
     func encode(to encoder: Encoder) throws {
@@ -342,5 +358,8 @@ struct AppSettings: Codable, Equatable {
         try c.encode(translateMode, forKey: .translateMode)
         try c.encode(uiLanguage, forKey: .uiLanguage)
         try c.encode(didChooseUILanguage, forKey: .didChooseUILanguage)
+        try c.encode(meetingScene, forKey: .meetingScene)
+        try c.encode(meetingTrigger, forKey: .meetingTrigger)
+        try c.encode(meetingTriggerKeywords, forKey: .meetingTriggerKeywords)
     }
 }

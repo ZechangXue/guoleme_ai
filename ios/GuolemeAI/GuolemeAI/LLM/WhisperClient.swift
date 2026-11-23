@@ -1,7 +1,7 @@
 import Foundation
 
 enum WhisperClient {
-    static func transcribe(pcm: Data, sampleRate: Int, apiKey: String) async throws -> (text: String, language: String?) {
+    static func transcribe(pcm: Data, sampleRate: Int, apiKey: String, prompt: String? = nil) async throws -> (text: String, language: String?) {
         let wav = pcm16ToWav(pcm, sampleRate: sampleRate)
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
@@ -11,6 +11,10 @@ enum WhisperClient {
         append("Content-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1\r\n")
         append("--\(boundary)\r\n")
         append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\nverbose_json\r\n")
+        if let prompt, !prompt.isEmpty {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n\(prompt)\r\n")
+        }
         append("--\(boundary)\r\n")
         append("Content-Disposition: form-data; name=\"file\"; filename=\"segment.wav\"\r\n")
         append("Content-Type: audio/wav\r\n\r\n")

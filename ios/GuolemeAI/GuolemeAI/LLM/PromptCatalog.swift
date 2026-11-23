@@ -15,6 +15,13 @@ enum PromptCatalog {
     static let answerTranslateZh = load("answer-translate-zh")
     static let sessionSummary = load("session-summary")
     static let imageQuestion = load("image-question")
+    static let meetingAssistSystem = load("meeting-assist-desktop")
+    static let meetingAssistOutput = load("meeting-assist-output-desktop")
+    static let meetingPrep = load("meeting-prep-desktop")
+    static let meetingPersonaDraft = load("meeting-persona-draft-desktop")
+    static let meetingQuickEn = load("meeting-quick-en-desktop")
+    static let meetingMemoryDigest = load("meeting-memory-digest-desktop")
+    static let translateReplyPersona = load("translate-reply-desktop")
 
     static func conciseSystemPrompt(userSystemPrompt: String) -> String {
         let base = stripLegacyOutputSchema(userSystemPrompt)

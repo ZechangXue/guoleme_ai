@@ -135,6 +135,7 @@ struct SettingsView: View {
     }
     private var meetingBinding: Binding<Bool> {
         Binding(get: { model.settings.meetingMode }, set: { value in
+            if model.listening { model.stopListening() }
             model.settingsStore.update {
                 $0.meetingMode = value
                 if value { $0.translateMode = false }
@@ -143,6 +144,7 @@ struct SettingsView: View {
     }
     private var translateBinding: Binding<Bool> {
         Binding(get: { model.settings.translateMode }, set: { value in
+            if model.listening { model.stopListening() }
             model.settingsStore.update {
                 $0.translateMode = value
                 if value { $0.meetingMode = false }

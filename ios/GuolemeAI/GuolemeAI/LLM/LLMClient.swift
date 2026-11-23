@@ -216,6 +216,124 @@ final class LLMClient {
         }
     }
 
+    /// Streams a system + user chat (optionally with an image) and returns the full text.
+    /// Gemini is not streamed: its full answer arrives as one delta.
+    @discardableResult
+    func streamText(
+        provider: ApiProvider,
+        apiKey: String,
+        model: String,
+        system: String,
+        user: String,
+        imageJPEGBase64: String? = nil,
+        json: Bool,
+        maxTokens: Int,
+        onDelta: @escaping (String) async -> Void
+    ) async throws -> String {
+        if provider == .google {
+            var parts: [[String: Any]] = [["text": user]]
+            if let imageJPEGBase64 {
+                parts.append(["inlineData": ["mimeType": "image/jpeg", "data": imageJPEGBase64]])
+            }
+            let text = try await geminiGenerateParts(apiKey: apiKey, model: model, system: system, parts: parts, json: json, maxTokens: maxTokens)
+            await onDelta(text)
+            return text
+        }
+
+        let userContent: Any
+        if let imageJPEGBase64 {
+            let parts: [[String: Any]] = [
+                ["type": "text", "text": user],
+                ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(imageJPEGBase64)", "detail": "high"]]
+            ]
+            userContent = parts
+        } else {
+            userContent = user
+        }
+        var body: [String: Any] = [
+            "model": model,
+            "stream": true,
+            "messages": [
+                ["role": "system", "content": system],
+                ["role": "user", "content": userContent]
+            ]
+        ]
+        if json { body["response_format"] = ["type": "json_object"] }
+        ProviderConfig.applyOpenAIChatParams(to: &body, model: model, temperature: 0.3, maxTokens: maxTokens)
+
+        var full = ""
+        try await streamChatSSE(provider: provider, apiKey: apiKey, model: model, body: body, timeout: 120) { delta, _ in
+            guard !delta.isEmpty else { return }
+            full += delta
+            await onDelta(delta)
+        }
+        return full
+    }
+
+    /// Non-streaming JSON completion parsed into a dictionary (empty if the model returned no object).
+    func completeJSONObject(
+        provider: ApiProvider,
+        apiKey: String,
+        model: String,
+        system: String,
+        user: String,
+        maxTokens: Int
+    ) async throws -> [String: Any] {
+        let raw: String
+        if provider == .google {
+            raw = try await geminiGenerateParts(apiKey: apiKey, model: model, system: system, parts: [["text": user]], json: true, maxTokens: maxTokens)
+        } else {
+            raw = try await chatCompletion(
+                provider: provider,
+                apiKey: apiKey,
+                model: model,
+                messages: [
+                    ["role": "system", "content": system],
+                    ["role": "user", "content": user]
+                ],
+                json: true,
+                stream: false,
+                maxTokens: maxTokens
+            )
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let start = trimmed.firstIndex(of: "{"), let end = trimmed.lastIndex(of: "}"),
+              let data = String(trimmed[start...end]).data(using: .utf8),
+              let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return [:]
+        }
+        return dict
+    }
+
+    private func geminiGenerateParts(
+        apiKey: String,
+        model: String,
+        system: String,
+        parts: [[String: Any]],
+        json: Bool,
+        maxTokens: Int
+    ) async throws -> String {
+        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+        var generation: [String: Any] = ["temperature": 0.3, "maxOutputTokens": maxTokens]
+        if json { generation["responseMimeType"] = "application/json" }
+        let body: [String: Any] = [
+            "systemInstruction": ["parts": [["text": system]]],
+            "contents": [["parts": parts]],
+            "generationConfig": generation
+        ]
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
+            throw LLMError.http(code, String(data: data, encoding: .utf8) ?? "")
+        }
+        return extractGeminiText(data)
+    }
+
     private func streamJSON(
         provider: ApiProvider,
         apiKey: String,

@@ -6,6 +6,8 @@ struct ListenView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var showCamera = false
     @State private var cameraImage: UIImage?
+    @State private var showMeetingPrep = false
+    @State private var showQuickEn = false
 
     var body: some View {
         ScrollView {
@@ -17,7 +19,12 @@ struct ListenView: View {
                         .foregroundStyle(.orange)
                 }
                 if model.settings.translateMode {
+                    MeetingLiveSection(meeting: model.meeting, profile: model.meetingProfile, showPrep: $showMeetingPrep, showQuickEn: $showQuickEn)
                     TranslateView()
+                    MeetingTranscriptView(meeting: model.meeting)
+                } else if model.settings.meetingMode {
+                    MeetingLiveSection(meeting: model.meeting, profile: model.meetingProfile, showPrep: $showMeetingPrep, showQuickEn: $showQuickEn)
+                    MeetingTranscriptView(meeting: model.meeting)
                 } else if let assist = model.currentAssist {
                     AssistCardView(
                         assist: assist,
@@ -46,6 +53,14 @@ struct ListenView: View {
                     model.statusMessage = model.t(.albumFail)
                 }
             }
+        }
+        .sheet(isPresented: $showMeetingPrep) {
+            MeetingPrepSheet(meeting: model.meeting, profile: model.meetingProfile)
+                .environmentObject(model)
+        }
+        .sheet(isPresented: $showQuickEn) {
+            QuickEnSheet(meeting: model.meeting)
+                .environmentObject(model)
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(image: $cameraImage)

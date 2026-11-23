@@ -47,6 +47,10 @@
 		B00000000000000000000024 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F00000000000000000000024 /* WidgetKit.framework */; };
 		B00000000000000000000025 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F00000000000000000000025 /* SwiftUI.framework */; };
 		B00000000000000000000026 /* GuolemeAILiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000026 /* GuolemeAILiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B00000000000000000000040 /* MeetingProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000040 /* MeetingProfileStore.swift */; };
+		B00000000000000000000041 /* MeetingPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000041 /* MeetingPrompt.swift */; };
+		B00000000000000000000042 /* MeetingAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000042 /* MeetingAssistant.swift */; };
+		B00000000000000000000043 /* MeetingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000043 /* MeetingViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -117,6 +121,10 @@
 		F00000000000000000000028 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F00000000000000000000029 /* GuolemeAI.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GuolemeAI.entitlements; sourceTree = "<group>"; };
 		F0000000000000000000002A /* WidgetInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = WidgetInfo.plist; path = Info.plist; sourceTree = "<group>"; };
+		F00000000000000000000040 /* MeetingProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingProfileStore.swift; sourceTree = "<group>"; };
+		F00000000000000000000041 /* MeetingPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingPrompt.swift; sourceTree = "<group>"; };
+		F00000000000000000000042 /* MeetingAssistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingAssistant.swift; sourceTree = "<group>"; };
+		F00000000000000000000043 /* MeetingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -209,6 +217,7 @@
 			children = (
 				F00000000000000000000003 /* RootView.swift */,
 				F00000000000000000000004 /* AppModel.swift */,
+				F00000000000000000000042 /* MeetingAssistant.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -240,6 +249,7 @@
 				F0000000000000000000000C /* PromptBuilder.swift */,
 				F0000000000000000000000D /* PromptCatalog.swift */,
 				F0000000000000000000002C /* ImagePrep.swift */,
+				F00000000000000000000041 /* MeetingPrompt.swift */,
 			);
 			path = LLM;
 			sourceTree = "<group>";
@@ -260,6 +270,7 @@
 				F00000000000000000000011 /* SettingsStore.swift */,
 				F00000000000000000000012 /* KeychainStore.swift */,
 				F00000000000000000000013 /* SessionLog.swift */,
+				F00000000000000000000040 /* MeetingProfileStore.swift */,
 			);
 			path = Persist;
 			sourceTree = "<group>";
@@ -274,6 +285,7 @@
 				F00000000000000000000017 /* ContextView.swift */,
 				F00000000000000000000018 /* SettingsView.swift */,
 				F00000000000000000000019 /* TranslateView.swift */,
+				F00000000000000000000043 /* MeetingViews.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -441,6 +453,10 @@
 				B0000000000000000000001A /* SessionPDFExporter.swift in Sources */,
 				B0000000000000000000001B /* ListeningAttributes.swift in Sources */,
 				B0000000000000000000001C /* ListeningLiveActivityController.swift in Sources */,
+				B00000000000000000000043 /* MeetingViews.swift in Sources */,
+				B00000000000000000000042 /* MeetingAssistant.swift in Sources */,
+				B00000000000000000000041 /* MeetingPrompt.swift in Sources */,
+				B00000000000000000000040 /* MeetingProfileStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

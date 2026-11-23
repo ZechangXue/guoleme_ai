@@ -8,7 +8,15 @@ final class AppModel: ObservableObject {
     let settingsStore = SettingsStore()
     let contextStore = ContextStore()
     let sessionLog = SessionLog()
+    let meetingProfile = MeetingProfileStore()
     private let llm = LLMClient()
+    lazy var meeting: MeetingAssistant = MeetingAssistant(
+        settingsStore: settingsStore,
+        contextStore: contextStore,
+        sessionLog: sessionLog,
+        profile: meetingProfile,
+        llm: llm
+    )
 
     @Published var listening = false
     @Published var audioLevel: Double = 0
@@ -27,7 +35,11 @@ final class AppModel: ObservableObject {
     private var fallbackMic: MicCapture?
     private var vad = VoiceActivityDetector()
     private var translateMic: MicCapture?
-    private var translateAudio = TranslateAudioBuffer()
+    /// Transcribed lines not yet summarized in translate mode.
+    private var translatePending: [String] = []
+    private var translateTimer: Task<Void, Never>?
+    /// Meeting / translate segments are force-cut at 15 s so long speech is transcribed promptly.
+    private static let meetingMaxSegmentSeconds: Double = 15
     private var streamStopped = false
     private var cancellables: Set<AnyCancellable> = []
 
@@ -37,6 +49,11 @@ final class AppModel: ObservableObject {
         let template = L10n.t(key, language: settings.uiLanguage)
         if args.isEmpty { return template }
         return String(format: template, arguments: args)
+    }
+
+    /// Inline bilingual string for newer screens that are not in the L10n table.
+    func tr(_ zh: String, _ en: String) -> String {
+        settings.uiLanguage == .en ? en : zh
     }
 
     var modeLabel: String {
@@ -59,6 +76,25 @@ final class AppModel: ObservableObject {
         sessionLog.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }.store(in: &cancellables)
+        configureMeeting()
+    }
+
+    private func configureMeeting() {
+        let vad = self.vad
+        meeting.flushAudio = { vad.flush() }
+        meeting.onLine = { [weak self] line in
+            guard let self, self.listening, self.settings.translateMode else { return }
+            self.translatePending.append(line.text)
+        }
+        meeting.onCardShown = { [weak self] question in
+            guard let self, self.listening else { return }
+            ListeningLiveActivityController.update(
+                modeLabel: self.modeLabel,
+                statusLine: question,
+                listeningLabel: self.t(.liveListening)
+            )
+        }
+        Task { await meeting.digestPendingSessions() }
     }
 
     func refreshKeyStatus() {
@@ -99,6 +135,11 @@ final class AppModel: ObservableObject {
             return
         }
 
+        if settings.meetingMode {
+            startMeetingListening()
+            return
+        }
+
         listening = true
         UIApplication.shared.isIdleTimerDisabled = true
         startLiveActivity()
@@ -121,9 +162,18 @@ final class AppModel: ObservableObject {
         fallbackMic = nil
         translateMic?.stop()
         translateMic = nil
-        translateAudio.reset()
+        translateTimer?.cancel()
+        translateTimer = nil
         vad.reset()
+        vad.maxSegmentBytes = 0
+        meetingProfile.flush()
         ListeningLiveActivityController.end()
+    }
+
+    /// Ends the current meeting: clears the live transcript and saves a memory digest for next time.
+    func endMeeting() {
+        translatePending = []
+        meeting.endSession()
     }
 
     func closeCurrentCard() {
@@ -184,6 +234,16 @@ final class AppModel: ObservableObject {
         }
         guard let jpeg = ImagePrep.jpegForVision(image) else {
             statusMessage = t(.imageBad)
+            return
+        }
+
+        if settings.meetingMode || settings.translateMode {
+            // Meeting / translate: a screenshot of slides or chat becomes a meeting answer card.
+            meeting.beginSession()
+            meeting.answerFromImage(
+                jpegBase64: jpeg.base64EncodedString(),
+                target: MeetingAssistant.ChatTarget(provider: vision.provider, apiKey: vision.apiKey, model: vision.model)
+            )
             return
         }
 
@@ -289,29 +349,29 @@ final class AppModel: ObservableObject {
 
     func summarizeTranslate(withReply: Bool, autoTriggered: Bool = false) async {
         guard !translateSummarizing else { return }
-        guard let openaiKey = KeychainStore.load(provider: .openai) else {
-            if !autoTriggered { pushTranslate(t(.noOpenAIKey), streaming: false) }
-            return
-        }
         guard let apiKey = KeychainStore.load(provider: settings.apiProvider) else {
             if !autoTriggered { pushTranslate(t(.noAPIKey), streaming: false) }
             return
         }
-        let pcm = translateAudio.takeAll()
-        let minBytes = Int(AppConstants.realtimeSampleRate * 2 * 0.4)
-        guard pcm.count >= minBytes else {
-            if !autoTriggered { pushTranslate(t(.noSpeech), streaming: false) }
-            return
-        }
         translateSummarizing = true
         defer { translateSummarizing = false }
-        do {
-            let result = try await WhisperClient.transcribe(pcm: pcm, sampleRate: Int(AppConstants.realtimeSampleRate), apiKey: openaiKey)
-            let transcript = result.text
-            if transcript.count < 5 {
-                if !autoTriggered { pushTranslate(t(.noSpeech), streaming: false) }
-                return
+
+        // Use the lines already transcribed live; a manual tap first cuts the segment in progress.
+        if !autoTriggered {
+            vad.flush()
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        await meeting.waitForPendingASR(timeout: autoTriggered ? 3 : 6)
+        let transcript = translatePending.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard transcript.count >= (autoTriggered ? 15 : 5) else {
+            if !autoTriggered {
+                pushTranslate(KeychainStore.load(provider: .openai) == nil ? t(.noOpenAIKey) : t(.noSpeech), streaming: false)
             }
+            return
+        }
+        translatePending = []
+
+        do {
             let id = UUID()
             let stamp = Self.clockFormatter.string(from: Date()) + (autoTriggered ? " · \(t(.translateAuto))" : "")
             translateEntries.insert(TranslateEntry(id: id, text: withReply ? "总结：" : "", timestamp: stamp, streaming: true), at: 0)
@@ -331,7 +391,7 @@ final class AppModel: ObservableObject {
                     provider: settings.apiProvider,
                     apiKey: apiKey,
                     model: settings.model,
-                    system: PromptCatalog.translateReply,
+                    system: translateReplySystemPrompt(),
                     user: transcript
                 )
                 if let idx = translateEntries.firstIndex(where: { $0.id == id }) {
@@ -358,10 +418,19 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func flushTranslateIfNeeded() async {
-        guard listening, settings.translateMode, !translateSummarizing else { return }
-        guard translateAudio.reachedFlushLimit else { return }
-        await summarizeTranslate(withReply: false, autoTriggered: true)
+    /// Reply prompt in the chosen answer language, spoken as the user when a profile exists.
+    private func translateReplySystemPrompt() -> String {
+        let label = settings.answerLanguage == .zh ? "Simplified Chinese (简体中文)" : "English"
+        let template = PromptCatalog.translateReplyPersona.isEmpty ? PromptCatalog.translateReply : PromptCatalog.translateReplyPersona
+        var prompt = template.replacingOccurrences(of: "{{REPLY_LANGUAGE}}", with: label)
+        if prompt == template {
+            prompt += "\n\nReply language: \(label). Always write the reply entirely in \(label), whatever language the transcript is in."
+        }
+        let persona = meetingProfile.state.personaText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !persona.isEmpty {
+            prompt += "\n\n[MY PROFILE — reply as this person, consistent with their role and work]\n\(MeetingPrompt.truncate(persona, 6000))"
+        }
+        return prompt
     }
 
     func exportSession() async -> URL? {
@@ -492,28 +561,64 @@ final class AppModel: ObservableObject {
     }
 
     private func startTranslateListening() {
+        if KeychainStore.load(provider: .openai) == nil {
+            statusMessage = t(.noOpenAIKey)
+        }
         listening = true
         UIApplication.shared.isIdleTimerDisabled = true
         startLiveActivity()
-        translateAudio.reset()
-        let mic = MicCapture(sampleRate: AppConstants.realtimeSampleRate)
-        let audio = translateAudio
+        translatePending = []
+        meeting.beginSession()
+        guard startSegmentMic() else { return }
+        translateTimer?.cancel()
+        translateTimer = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(AppConstants.translateFlushSeconds * 1_000_000_000))
+                guard !Task.isCancelled, let self, self.listening, self.settings.translateMode else { return }
+                await self.summarizeTranslate(withReply: false, autoTriggered: true)
+            }
+        }
+    }
+
+    /// Meeting mode: segment-by-segment transcription feeding the meeting assistant (no Realtime).
+    private func startMeetingListening() {
+        guard KeychainStore.load(provider: .openai) != nil else {
+            statusMessage = t(.fallbackNeedOpenAI)
+            return
+        }
+        listening = true
+        UIApplication.shared.isIdleTimerDisabled = true
+        startLiveActivity()
+        meeting.beginSession()
+        _ = startSegmentMic()
+    }
+
+    /// Mic → VAD → MeetingAssistant transcription. Returns false if the mic could not start.
+    private func startSegmentMic() -> Bool {
+        let sampleRate = AppConstants.realtimeSampleRate
+        let segmentVAD = self.vad
+        segmentVAD.reset()
+        segmentVAD.maxSegmentBytes = Int(sampleRate * 2 * Self.meetingMaxSegmentSeconds)
+        segmentVAD.onSegment = { [weak self] pcm in
+            Task { @MainActor in
+                self?.meeting.ingest(pcm, sampleRate: Int(sampleRate))
+            }
+        }
+        let mic = MicCapture(sampleRate: sampleRate)
         mic.onLevel = { [weak self] level in
             Task { @MainActor in self?.audioLevel = level }
         }
-        mic.onPCM = { [weak self] data in
-            audio.append(data)
-            guard audio.reachedFlushLimit else { return }
-            Task { @MainActor in
-                await self?.flushTranslateIfNeeded()
-            }
+        mic.onPCM = { data in
+            segmentVAD.ingest(data)
         }
         do {
             try mic.start()
             translateMic = mic
+            return true
         } catch {
             statusMessage = t(.micFail, error.localizedDescription)
             stopListening()
+            return false
         }
     }
 
