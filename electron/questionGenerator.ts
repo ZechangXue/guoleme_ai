@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
 import { getApiKey } from './settingsStore';
 import { createEmbedding } from './embeddings';
+import { DEFAULT_MODEL_BY_PROVIDER, openaiChatModelOptions } from './providerConfig';
 
 interface RawGeneratedQuestion {
   question: string;
@@ -51,9 +52,10 @@ async function generateRawQuestions(
   const contextText = buildContextSnippet(docType, structured, chunks);
 
   const res = await client.chat.completions.create({
-    model: 'gpt-4.1-mini',
-    temperature: 0.4,
-    response_format: { type: 'json_object' },
+    ...openaiChatModelOptions(DEFAULT_MODEL_BY_PROVIDER.openai, {
+      temperature: 0.4,
+      json: true
+    }),
     messages: [
       { role: 'system', content: system },
       {

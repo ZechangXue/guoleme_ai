@@ -19,12 +19,17 @@ interface AudioListenerOptions {
    * 麦克风路径专用：RMS ≤ 此值视为「静音」用于切段（应低于正常说话、高于纯底噪）
    */
   voiceExitRms?: number;
+  /**
+   * 连续说话超过该时长（ms）时强制切段；0 表示不限制。
+   * 会议转写需要持续产出文本，避免对方长篇发言时迟迟没有转写。
+   */
+  maxSegmentMs?: number;
 }
 
 type ResolvedAudioOptions = Required<
   Pick<
     AudioListenerOptions,
-    'sampleRate' | 'silenceMs' | 'silenceThreshold' | 'deviceId' | 'voiceEnterRms' | 'voiceExitRms'
+    'sampleRate' | 'silenceMs' | 'silenceThreshold' | 'deviceId' | 'voiceEnterRms' | 'voiceExitRms' | 'maxSegmentMs'
   >
 >;
 
@@ -48,7 +53,8 @@ export class AudioListener extends EventEmitter {
       silenceThreshold: options?.silenceThreshold ?? 0.01,
       deviceId: options?.deviceId ?? -1,
       voiceEnterRms: options?.voiceEnterRms ?? 0.028,
-      voiceExitRms: options?.voiceExitRms ?? 0.012
+      voiceExitRms: options?.voiceExitRms ?? 0.012,
+      maxSegmentMs: options?.maxSegmentMs ?? 0
     };
   }
 
@@ -133,6 +139,16 @@ export class AudioListener extends EventEmitter {
     if (isVoice) {
       this.currentBuffers.push(chunk);
       this.lastVoiceTime = now;
+      if (this.options.maxSegmentMs > 0) {
+        const maxBytes = Math.floor((this.options.maxSegmentMs / 1000) * this.options.sampleRate) * 2;
+        let bytes = 0;
+        for (const b of this.currentBuffers) bytes += b.length;
+        if (bytes >= maxBytes) {
+          const segment = Buffer.concat(this.currentBuffers);
+          this.currentBuffers = [];
+          this.emit('segment', segment);
+        }
+      }
       return;
     }
 

@@ -14,7 +14,7 @@
  *     npm run diagnose:openai-key
  *
  * 可选：与 App 相同模型
- *   $env:OPENAI_MODEL="gpt-4.1-mini"; $env:OPENAI_API_KEY="sk-..."; node scripts/diagnose-openai-key.mjs
+ *   $env:OPENAI_MODEL="gpt-5-mini"; $env:OPENAI_API_KEY="sk-..."; node scripts/diagnose-openai-key.mjs
  */
 
 import { chdir } from 'process';
@@ -42,7 +42,7 @@ const keyFromEnv = process.env.OPENAI_API_KEY?.trim();
 const keyFromArg = process.argv[2]?.trim();
 const apiKey = keyFromEnv || keyFromArg;
 
-const model = (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
+const model = (process.env.OPENAI_MODEL || 'gpt-5-mini').trim();
 
 function hintZh(msg) {
   const m = (msg || '').toLowerCase();
@@ -63,7 +63,7 @@ function hintZh(msg) {
     hints.push('→ 可能需要添加支付方式。');
   }
   if (/model.*not found|does not exist|not have access|invalid_model/i.test(msg)) {
-    hints.push(`→ 当前模型「${model}」对该账号不可用，在 App 设置里改成 gpt-4o-mini 再测。`);
+    hints.push(`→ 当前模型「${model}」对该账号不可用，在 App 设置里改成 gpt-5-mini 再测。`);
   }
   if (hints.length === 0) hints.push('→ 对照上方 status / code / message 排查，或把脱敏后的报错发给开发者。');
   return hints.join('\n');
@@ -123,7 +123,9 @@ async function main() {
   try {
     await client.chat.completions.create({
       model,
-      max_tokens: 5,
+      ...(String(model).toLowerCase().startsWith('gpt-5')
+        ? { max_completion_tokens: 64, reasoning_effort: model.toLowerCase().startsWith('gpt-5.') ? 'none' : 'minimal' }
+        : { max_tokens: 64 }),
       messages: [{ role: 'user', content: 'Hi' }]
     });
     console.log('成功。该 Key 使用模型「' + model + '」可正常调用。');
@@ -131,9 +133,9 @@ async function main() {
     printErr('chat.completions', e);
     const code = e?.code ?? e?.error?.code;
     const isQuota = code === 'insufficient_quota' || /insufficient_quota/i.test(e?.message ?? '');
-    if (model !== 'gpt-4o-mini' && !isQuota) {
+    if (model !== 'gpt-5-mini' && !isQuota) {
       console.log('\n若是「模型不可用」类错误，可再试（不换 Key，只换模型）：');
-      console.log('  $env:OPENAI_MODEL="gpt-4o-mini"; $env:OPENAI_API_KEY="…"; node scripts/diagnose-openai-key.mjs');
+      console.log('  $env:OPENAI_MODEL="gpt-5-mini"; $env:OPENAI_API_KEY="…"; node scripts/diagnose-openai-key.mjs');
     }
   }
 

@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('teleprompter', {
   toggleListening: () => ipcRenderer.invoke('listener:toggle'),
   getListenerStatus: () => ipcRenderer.invoke('listener:status'),
   answerFromScreenshot: () => ipcRenderer.invoke('screenshot:answer'),
+  answerFromFullScreenScreenshot: () => ipcRenderer.invoke('screenshot:answerFullScreen'),
 
   hideWindow: () => ipcRenderer.invoke('window:hide'),
   showWindow: () => ipcRenderer.invoke('window:show'),
@@ -68,10 +69,48 @@ contextBridge.exposeInMainWorld('teleprompter', {
   analyzeMeetingDocuments: () => ipcRenderer.invoke('meeting:analyzeDocuments'),
   clearMeetingDocuments: () => ipcRenderer.invoke('meeting:clearDocuments'),
 
+  // 会议助手：画像 / 本周进展 / 会前准备 / 会中交互 / 跨会议记忆
+  getMeetingState: () => ipcRenderer.invoke('meeting:getState'),
+  setMeetingPersona: (text) => ipcRenderer.invoke('meeting:setPersona', text),
+  setMeetingWeeklyNotes: (text) => ipcRenderer.invoke('meeting:setWeeklyNotes', text),
+  generateMeetingPrep: () => ipcRenderer.invoke('meeting:generatePrep'),
+  clearMeetingPrep: () => ipcRenderer.invoke('meeting:clearPrep'),
+  draftMeetingPersona: () => ipcRenderer.invoke('meeting:draftPersona'),
+  meetingQuickTranslate: (text) => ipcRenderer.invoke('meeting:quickTranslate', text),
+  meetingAnswerNow: () => ipcRenderer.invoke('meeting:answerNow'),
+  endMeetingSession: () => ipcRenderer.invoke('meeting:endSession'),
+  deleteMeetingSession: (id) => ipcRenderer.invoke('meeting:deleteSession', id),
+  clearMeetingSessions: () => ipcRenderer.invoke('meeting:clearSessions'),
+  onMeetingCard: (callback) => {
+    const handler = (_e, data) => callback(data);
+    ipcRenderer.on('meeting:cardChunk', handler);
+    return () => ipcRenderer.removeListener('meeting:cardChunk', handler);
+  },
+  onMeetingTranscript: (callback) => {
+    const handler = (_e, line) => callback(line);
+    ipcRenderer.on('meeting:transcript', handler);
+    return () => ipcRenderer.removeListener('meeting:transcript', handler);
+  },
+  onMeetingTranscriptReset: (callback) => {
+    const handler = (_e, lines) => callback(lines);
+    ipcRenderer.on('meeting:transcriptReset', handler);
+    return () => ipcRenderer.removeListener('meeting:transcriptReset', handler);
+  },
+  onMeetingProfileUpdated: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('meeting:profileUpdated', handler);
+    return () => ipcRenderer.removeListener('meeting:profileUpdated', handler);
+  },
+  onMeetingOpenQuickBox: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('meeting:openQuickBox', handler);
+    return () => ipcRenderer.removeListener('meeting:openQuickBox', handler);
+  },
+
   // 翻译总结模式
   translateStart: () => ipcRenderer.invoke('translate:start'),
   translateStop: () => ipcRenderer.invoke('translate:stop'),
-  translateSummarize: () => ipcRenderer.invoke('translate:summarize'),
+  translateSummarize: (options) => ipcRenderer.invoke('translate:summarize', options),
   onTranslateChunk: (callback) => {
     const handler = (_e, data) => callback(data);
     ipcRenderer.on('translate:chunk', handler);

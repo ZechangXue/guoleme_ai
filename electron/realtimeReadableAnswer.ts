@@ -6,12 +6,12 @@
 import WebSocket from 'ws';
 import type { ReadableAssistJSON } from './types';
 
-const DEFAULT_REALTIME_MODEL = 'gpt-4o-mini-realtime-preview';
+const DEFAULT_REALTIME_MODEL = 'gpt-realtime-mini';
 
 /**
  * 使用 Realtime 模型：发文本问题 → 收 JSON 可读答案。
  * @param apiKey OpenAI API Key
- * @param model 如 gpt-4o-mini-realtime-preview
+ * @param model 如 gpt-realtime-mini
  * @param instructions 完整 system 指令（含上下文），与 llmClient.buildSystemContent(READABLE_SYSTEM_PROMPT, ...) 一致
  * @param questionZh 当前问题中文
  */

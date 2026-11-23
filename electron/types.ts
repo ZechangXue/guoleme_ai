@@ -117,6 +117,83 @@ export interface Settings {
   answerLanguage?: 'en' | 'zh';
   /** 翻译总结模式：监听音频并翻译总结成中文，与面试/组会模式互斥 */
   translateMode?: boolean;
+  /** 会议场景：影响会议答题卡的回答侧重 */
+  meetingScene?: MeetingScene;
+  /** 会议答题卡触发方式（组会模式 & 翻译总结模式共用） */
+  meetingTrigger?: MeetingTrigger;
+  /** 「点名」触发关键词，逗号分隔（如 Zechang, Ze Chang） */
+  meetingTriggerKeywords?: string;
+}
+
+// ─────────────────────────────────────────────
+// 会议助手（画像 / 本周进展 / 场景 / 跨会议记忆）
+// ─────────────────────────────────────────────
+
+/** weekly 周组会进展 · project 新项目/方案探讨 · partner 合作方技术会谈 · interviewer 我是面试官 */
+export type MeetingScene = 'weekly' | 'project' | 'partner' | 'interviewer';
+
+/** all 所有问题都弹卡 · mention 点到我才弹 · manual 只按热键 */
+export type MeetingTrigger = 'all' | 'mention' | 'manual';
+
+export interface MeetingCardData {
+  question_zh?: string;
+  q_type?: string;
+  opener_en?: string;
+  points_en?: string[];
+  concise_answer_en?: string;
+  expanded_answer_en?: string;
+  source?: string;
+  caution_zh?: string;
+}
+
+export interface MeetingCardChunk {
+  id: number;
+  partial: MeetingCardData;
+  done: boolean;
+  /** 本轮判定为与我无关 / 非问题：渲染端应丢弃该卡 */
+  skipped?: boolean;
+  error?: string;
+  trigger?: 'auto' | 'mention' | 'manual' | 'screenshot';
+}
+
+export interface MeetingTranscriptLine {
+  id: number;
+  text: string;
+  at: number;
+}
+
+export interface MeetingPrep {
+  update_script_en: string;
+  likely_questions: { asker?: string; question_en: string; question_zh?: string; answer_en: string }[];
+  decisions_needed_en: string[];
+  generatedAt: number;
+}
+
+export interface MeetingSessionCard {
+  question_zh: string;
+  answer: string;
+  at: number;
+}
+
+export interface MeetingSession {
+  id: string;
+  scene: MeetingScene;
+  startedAt: number;
+  lastActiveAt: number;
+  endedAt?: number;
+  cards: MeetingSessionCard[];
+  transcript: { text: string; at: number }[];
+  /** 会后提炼的记忆（中文）；为空表示尚未提炼 */
+  digest_zh?: string;
+  commitments?: string[];
+}
+
+export interface MeetingProfileState {
+  personaText: string;
+  weeklyNotes: string;
+  prep: MeetingPrep | null;
+  sessions: MeetingSession[];
+  activeSessionId: string | null;
 }
 
 // 流式 LLM 更新事件（兼容两种模式的所有字段）

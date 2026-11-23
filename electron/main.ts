@@ -6,7 +6,7 @@ import portAudio from 'naudiodon';
 import { AudioListener } from './audioCapture';
 import { RealtimeTranscriber } from './realtimeTranscriber';
 import { RealtimeAllInOne } from './realtimeAllInOne';
-import { transcribeSegment } from './asrService';
+import { transcribeSegment, transcribeLongPcm } from './asrService';
 import {
   generateAssist,
   generateAssistStream,
@@ -31,8 +31,10 @@ import {
   getOpenAICompatibleBaseUrl,
   isOpenAICompatible,
   getRealtimeModelOrNull,
-  DEFAULT_MODEL_BY_PROVIDER
+  DEFAULT_MODEL_BY_PROVIDER,
+  openaiChatModelOptions
 } from './providerConfig';
+import { TRANSLATE_SUMMARY_PROMPT, buildTranslateReplyPrompt } from './sharedPrompts';
 import {
   addContextFile,
   clearContextFiles,
@@ -96,6 +98,17 @@ import {
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import { registerMacIpcHandlers } from './macIpcHandlers';
+import { MeetingEngine } from './meetingEngine';
+import {
+  getMeetingProfileState,
+  setPersonaText,
+  setWeeklyNotes,
+  setMeetingPrep,
+  deleteSession,
+  clearSessions,
+  flushMeetingProfile
+} from './meetingProfile';
+import { buildPersonaBlock } from './meetingPrompt';
 
 // ─────────────────────────────────────────────
 // 音频设备工具函数
@@ -205,8 +218,35 @@ let realtimeAllInOne: RealtimeAllInOne | null = null;
 let screenshotSelectionWindow: BrowserWindow | null = null;
 
 // ── 翻译总结模式 ──────────────────────────────────────────────────────────
+const TRANSLATE_SAMPLE_RATE = 16000;
+const TRANSLATE_AUTO_FLUSH_MS = 60_000;
+/** 自动总结时，新转写不足该字数则跳过 */
+const TRANSLATE_AUTO_MIN_CHARS = 15;
 let translateAudioListener: AudioListener | null = null;
-let translateAudioBuffer: Buffer[] = [];  // 每个元素是一个 VAD 分段
+let translateListeningActive = false;
+let translateAutoTimer: ReturnType<typeof setTimeout> | null = null;
+let translateSummarizeTail: Promise<unknown> = Promise.resolve();
+/** 翻译模式下：自上次总结以来的新转写（逐段 Whisper 已转好，总结时不再重复转写） */
+let translatePendingLines: { text: string; at: number }[] = [];
+let translateUnsubscribeLines: (() => void) | null = null;
+
+/** 会议音频统一的最大段长：长篇发言也能持续产出转写 */
+const MEETING_MAX_SEGMENT_MS = 15_000;
+
+// 会议助手引擎：组会模式 & 翻译总结模式共用（转写、弹卡、会前准备、跨会议记忆）
+const meetingEngine = new MeetingEngine({
+  send: (channel, payload) => mainWindow?.webContents.send(channel, payload),
+  flushActiveAudio: () => {
+    if (translateListeningActive) translateAudioListener?.flushSegment();
+    else audioListener?.flushSegment();
+  }
+});
+
+/** 组会 / 翻译模式下才走会议答题卡 */
+function isMeetingAssistActive(): boolean {
+  const s = getSettings();
+  return !!(s.meetingMode || s.translateMode);
+}
 
 /** Realtime 一体：若 response.done 时还没有 input_audio_transcription，则先挂起，等转写回调再写入一键导出 */
 type PendingRealtimeSessionExport = {
@@ -245,34 +285,21 @@ function selectionOverlayHtml(): string {
 <head>
   <meta charset="utf-8" />
   <style>
-    html, body { margin:0; width:100%; height:100%; overflow:hidden; cursor:crosshair; background:rgba(0,0,0,0.16); }
-    #box { position:absolute; border:2px solid #60a5fa; background:rgba(96,165,250,0.18); box-shadow:0 0 0 9999px rgba(0,0,0,0.28); display:none; }
-    #hint { position:fixed; top:18px; left:50%; transform:translateX(-50%); color:white; font:14px system-ui,sans-serif; background:rgba(15,23,42,0.75); padding:8px 12px; border-radius:6px; pointer-events:none; }
+    html, body { margin:0; width:100%; height:100%; overflow:hidden; background:transparent; }
   </style>
 </head>
 <body>
-  <div id="hint">拖拽选择截图区域，Esc 取消</div>
-  <div id="box"></div>
   <script>
     const { ipcRenderer } = require('electron');
-    const box = document.getElementById('box');
-    let down = false, sx = 0, sy = 0;
-    const draw = (x, y) => {
-      const left = Math.min(sx, x);
-      const top = Math.min(sy, y);
-      const width = Math.abs(x - sx);
-      const height = Math.abs(y - sy);
-      box.style.display = 'block';
-      box.style.left = left + 'px';
-      box.style.top = top + 'px';
-      box.style.width = width + 'px';
-      box.style.height = height + 'px';
-    };
-    window.addEventListener('mousedown', e => { down = true; sx = e.clientX; sy = e.clientY; draw(sx, sy); });
-    window.addEventListener('mousemove', e => { if (down) draw(e.clientX, e.clientY); });
-    window.addEventListener('mouseup', e => {
-      if (!down) return;
-      down = false;
+    let hasStart = false, sx = 0, sy = 0;
+    window.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      if (!hasStart) {
+        hasStart = true;
+        sx = e.clientX;
+        sy = e.clientY;
+        return;
+      }
       const x = Math.min(sx, e.clientX);
       const y = Math.min(sy, e.clientY);
       const width = Math.abs(e.clientX - sx);
@@ -331,6 +358,11 @@ async function selectScreenshotRegion(): Promise<ScreenshotSelection | null> {
         contextIsolation: false
       }
     });
+    try {
+      screenshotSelectionWindow.setContentProtection(true);
+    } catch (e) {
+      console.warn('[ScreenshotSelection] setContentProtection failed:', e);
+    }
     screenshotSelectionWindow.setAlwaysOnTop(true, 'screen-saver');
     screenshotSelectionWindow.on('closed', () => finish(null));
     screenshotSelectionWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(selectionOverlayHtml())}`);
@@ -359,6 +391,21 @@ async function captureSelectedRegion(selection: ScreenshotSelection): Promise<st
     height: Math.max(1, Math.round(selection.rect.height * sy))
   });
   return cropped.toPNG().toString('base64');
+}
+
+async function captureCurrentDisplay(): Promise<string | null> {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const scale = display.scaleFactor || 1;
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: {
+      width: Math.round(display.bounds.width * scale),
+      height: Math.round(display.bounds.height * scale)
+    }
+  });
+  const source = sources.find(s => s.display_id === String(display.id)) ?? sources[0];
+  if (!source || source.thumbnail.isEmpty()) return null;
+  return source.thumbnail.toPNG().toString('base64');
 }
 
 function persistScreenshotAssist(assist: Partial<AssistJSON & { expanded_answer_en?: string }>, rawLabel: string): void {
@@ -422,6 +469,7 @@ function scheduleRealtimeAllInOneRestartAfterTurn() {
     const provider = latest.apiProvider ?? 'openai';
     if (!latest.listening) return;
     if (latest.translateMode) return; // 翻译总结模式下禁止自动重启
+    if (latest.meetingMode) return; // 组会模式走会议引擎（段式转写），不用 AllInOne
     if (!latest.useRealtimeAllInOne || provider !== 'openai') return;
     if (realtimeAllInOne) return;
     startAllInOneListener().catch((err) => {
@@ -501,6 +549,14 @@ function createWindow() {
     }
   });
 
+  // Prevent the floating assistant window from being captured by screen sharing
+  // or recording apps where the OS supports content protection.
+  try {
+    mainWindow.setContentProtection(true);
+  } catch (e) {
+    console.warn('[Window] setContentProtection failed:', e);
+  }
+
   // 根据设置应用窗口透明度
   if (typeof settings.windowOpacity === 'number') {
     mainWindow.setOpacity(settings.windowOpacity);
@@ -555,6 +611,24 @@ function setupTrayAndShortcut() {
   tray.setContextMenu(
     Menu.buildFromTemplate([{ label: '退出', click: () => { tray?.destroy(); tray = null; mainWindow?.destroy(); app.quit(); } }])
   );
+
+  // 会议中焦点通常在 Zoom / Teams 上，所以用全局快捷键
+  const ANSWER_NOW_SHORTCUT = 'CommandOrControl+Shift+1';
+  const QUICK_EN_SHORTCUT = 'CommandOrControl+Shift+2';
+  const okAnswer = globalShortcut.register(ANSWER_NOW_SHORTCUT, () => {
+    if (!isMeetingAssistActive()) return;
+    if (mainWindow && !mainWindow.isVisible()) mainWindow.showInactive();
+    meetingEngine.answerNow().catch(err => console.error('[Meeting] answerNow failed', err));
+  });
+  const okQuick = globalShortcut.register(QUICK_EN_SHORTCUT, () => {
+    if (!mainWindow) return;
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('meeting:openQuickBox');
+  });
+  if (!okAnswer || !okQuick) {
+    console.warn('[Shortcut] 会议快捷键注册失败（可能被其它程序占用）', { okAnswer, okQuick });
+  }
 
   const TRAY_SHORTCUT = 'CommandOrControl+Shift+H';
   globalShortcut.register(TRAY_SHORTCUT, () => {
@@ -1019,6 +1093,11 @@ async function runAssistForCombinedQuestion(combined: string, speechStoppedAt: n
 
 async function handleSegment(buffer: Buffer) {
   const settings = getSettings();
+  // 组会模式：逐段转写进入会议引擎（实时转写 + 按触发方式弹卡）
+  if (settings.meetingMode) {
+    meetingEngine.ingestAudio(buffer, 16000);
+    return;
+  }
   // 段式 ASR 使用 OpenAI Whisper，需 OpenAI Key
   const openaiKey = await getApiKey('openai');
 
@@ -1046,7 +1125,8 @@ function getSegmentListener(): AudioListener {
       sampleRate: 16000,
       silenceMs: 1000,
       silenceThreshold: 0.01,
-      deviceId: resolveAudioDeviceId(s.audioDeviceId ?? -1)
+      deviceId: resolveAudioDeviceId(s.audioDeviceId ?? -1),
+      maxSegmentMs: s.meetingMode ? MEETING_MAX_SEGMENT_MS : 0
     });
     audioListener.on('segment', handleSegment);
     attachLevelForwarder(audioListener);
@@ -1079,7 +1159,7 @@ function stopRealtimeListener() {
 }
 
 // ─────────────────────────────────────────────
-// 全内属路径（gpt-4o-realtime：听音频直接出 JSON）
+// 全内属路径（Realtime：听音频直接出 JSON）
 // ─────────────────────────────────────────────
 
 async function startAllInOneListener(): Promise<void> {
@@ -1271,6 +1351,57 @@ function stopAllInOneListener(audioOnly = false): void {
 
 // ─────────────────────────────────────────────
 
+async function answerFromScreenshotImage(imageBase64: string, rawLabel: string): Promise<{ ok: boolean; error?: string }> {
+  const settings = getSettings();
+  if (settings.meetingMode || settings.translateMode) {
+    return meetingEngine.answerFromImage(imageBase64);
+  }
+  const provider = settings.apiProvider ?? 'openai';
+  const apiKey = await getApiKey(provider);
+  if (!apiKey || settings.mockLlm) return { ok: false, error: 'API key required' };
+
+  const meetingMode = settings.meetingMode ?? false;
+  const meetCtx = meetingMode ? buildMeetingAnswerContext() : null;
+  const imgSystemPrompt = settings.systemPrompt;
+  const sharedArgs = [
+    apiKey,
+    settings.model,
+    imgSystemPrompt,
+    getContextSummary(),
+    getQuestionHistory(),
+    imageBase64,
+    settings.responseStyle ?? 'concise'
+  ] as const;
+  const result = provider === 'google'
+    ? await generateAssistGeminiFromImage(
+        ...sharedArgs,
+        getStructuredContext(),
+        meetingMode ? undefined : buildInterviewDocContent() || undefined,
+        meetCtx ? { fullContent: meetCtx.fullContent, hasDocuments: meetCtx.hasDocuments } : undefined
+      )
+    : isOpenAICompatible(provider)
+      ? await generateAssistFromImage(
+          ...sharedArgs,
+          getOpenAICompatibleBaseUrl(provider),
+          getStructuredContext(),
+          meetingMode ? undefined : buildInterviewDocContent() || undefined,
+          meetCtx ? { fullContent: meetCtx.fullContent, hasDocuments: meetCtx.hasDocuments } : undefined
+        )
+      : null;
+
+  if (!result) return { ok: false, error: 'Screenshot QA currently requires an OpenAI-compatible or Gemini vision model.' };
+  const assist = await maybeTranslateFinalAssistToChinese(result as AssistJSON & { expanded_answer_en?: string });
+
+  if (assist.question_zh && isNoiseOrUnrecognizedQuestionZh(assist.question_zh)) return { ok: true };
+  persistScreenshotAssist(assist, rawLabel);
+  mainWindow?.webContents.send('assist:newSuggestion', {
+    assist,
+    queueSize: 0,
+    timestamp: Date.now()
+  } satisfies AssistEventPayload);
+  return { ok: true };
+}
+
 async function answerFromScreenshot(): Promise<{ ok: boolean; error?: string }> {
   try {
     const selection = await selectScreenshotRegion();
@@ -1279,55 +1410,21 @@ async function answerFromScreenshot(): Promise<{ ok: boolean; error?: string }> 
     const imageBase64 = await captureSelectedRegion(selection);
     mainWindow?.show();
     if (!imageBase64) return { ok: false, error: 'capture failed' };
-
-    const settings = getSettings();
-    const provider = settings.apiProvider ?? 'openai';
-    const apiKey = await getApiKey(provider);
-    if (!apiKey || settings.mockLlm) return { ok: false, error: 'API key required' };
-
-    const meetingMode = settings.meetingMode ?? false;
-    const meetCtx = meetingMode ? buildMeetingAnswerContext() : null;
-    const imgSystemPrompt = settings.systemPrompt;
-    const sharedArgs = [
-      apiKey,
-      settings.model,
-      imgSystemPrompt,
-      getContextSummary(),
-      getQuestionHistory(),
-      imageBase64,
-      settings.responseStyle ?? 'concise'
-    ] as const;
-    const result = provider === 'google'
-      ? await generateAssistGeminiFromImage(
-          ...sharedArgs,
-          getStructuredContext(),
-          meetingMode ? undefined : buildInterviewDocContent() || undefined,
-          meetCtx ? { fullContent: meetCtx.fullContent, hasDocuments: meetCtx.hasDocuments } : undefined
-        )
-      : isOpenAICompatible(provider)
-        ? await generateAssistFromImage(
-            ...sharedArgs,
-            getOpenAICompatibleBaseUrl(provider),
-            getStructuredContext(),
-            meetingMode ? undefined : buildInterviewDocContent() || undefined,
-            meetCtx ? { fullContent: meetCtx.fullContent, hasDocuments: meetCtx.hasDocuments } : undefined
-          )
-        : null;
-
-    if (!result) return { ok: false, error: 'Screenshot QA currently requires an OpenAI-compatible or Gemini vision model.' };
-    const assist = await maybeTranslateFinalAssistToChinese(result as AssistJSON & { expanded_answer_en?: string });
-
-    if (assist.question_zh && isNoiseOrUnrecognizedQuestionZh(assist.question_zh)) return { ok: true };
-    persistScreenshotAssist(assist, '[screenshot selection]');
-    mainWindow?.webContents.send('assist:newSuggestion', {
-      assist,
-      queueSize: 0,
-      timestamp: Date.now()
-    } satisfies AssistEventPayload);
-    return { ok: true };
+    return await answerFromScreenshotImage(imageBase64, '[screenshot selection]');
   } catch (e: any) {
     mainWindow?.show();
     console.error('[ScreenshotQA] failed', e);
+    return { ok: false, error: e?.message ?? String(e) };
+  }
+}
+
+async function answerFromFullScreenScreenshot(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const imageBase64 = await captureCurrentDisplay();
+    if (!imageBase64) return { ok: false, error: 'capture failed' };
+    return await answerFromScreenshotImage(imageBase64, '[full screen screenshot]');
+  } catch (e: any) {
+    console.error('[FullScreenScreenshotQA] failed', e);
     return { ok: false, error: e?.message ?? String(e) };
   }
 }
@@ -1385,6 +1482,51 @@ function persistReadableExpandedToSummary(
   }
 }
 
+/** 面试 / 组会监听的统一启动入口（翻译模式另有 translate:start） */
+async function startPrimaryListener(): Promise<void> {
+  const settings = getSettings();
+  const provider = settings.apiProvider ?? 'openai';
+  if (settings.meetingMode) {
+    // 组会：段式 Whisper 逐段转写 → 会议引擎（需要完整转写流来判断是否点到我）
+    meetingEngine.beginSession();
+    getSegmentListener().start();
+    return;
+  }
+  // Realtime 仅 OpenAI 支持；其它服务商走段式 Whisper + 当前 LLM
+  if (settings.useRealtimeAllInOne && provider === 'openai') {
+    await startAllInOneListener();
+  } else if (settings.useRealtimeAsr && provider === 'openai') {
+    await startRealtimeListener();
+  } else {
+    getSegmentListener().start();
+  }
+}
+
+function stopPrimaryListener(audioOnly: boolean): void {
+  const settings = getSettings();
+  if (settings.meetingMode) {
+    audioListener?.stop();
+    return;
+  }
+  if (settings.useRealtimeAllInOne) {
+    stopAllInOneListener(audioOnly);
+  } else if (settings.useRealtimeAsr) {
+    stopRealtimeListener();
+  } else if (audioListener) {
+    audioListener.stop();
+  }
+}
+
+/** 停掉并丢弃所有面试 / 组会监听实例（切换模式 / 设备时用） */
+function teardownPrimaryListeners(): void {
+  realtimeAllInOne?.stop();
+  realtimeAllInOne = null;
+  realtimeTranscriber?.stop();
+  realtimeTranscriber = null;
+  audioListener?.stop();
+  audioListener = null;
+}
+
 function registerIpcHandlers() {
   // Settings
   ipcMain.handle('settings:get', () => getSettings());
@@ -1407,23 +1549,28 @@ function registerIpcHandlers() {
         mainWindow?.webContents.send('listener:status', { listening: false });
       } else {
         // 退出翻译模式：停止录音并清空缓冲区
+        stopTranslateAutoTimer();
+        translateListeningActive = false;
         translateAudioListener?.stop();
         translateAudioListener = null;
-        translateAudioBuffer = [];
+        translatePendingLines = [];
+        translateUnsubscribeLines?.();
+        translateUnsubscribeLines = null;
       }
     }
 
     // meetingMode 切换时：重建 AllInOne，让新 session 带上/去掉文档 instructions
+    // meetingMode 切换时：组会走段式会议引擎、面试走 AllInOne 等，需重建监听实例
     if ('meetingMode' in partial && partial.meetingMode !== before.meetingMode) {
-      if (updated.useRealtimeAllInOne && updated.listening) {
-        realtimeAllInOne?.stop();
-        realtimeAllInOne = null;
-        startAllInOneListener().catch(console.error);
+      teardownPrimaryListeners();
+      clearBuffer();
+      if (updated.listening && !updated.translateMode) {
+        startPrimaryListener().catch(console.error);
       }
     }
 
     // answerLanguage 变更时，重建 AllInOne，让新 session 带上新的语言指令。
-    if ('answerLanguage' in partial && partial.answerLanguage !== before.answerLanguage && updated.useRealtimeAllInOne) {
+    if ('answerLanguage' in partial && partial.answerLanguage !== before.answerLanguage && updated.useRealtimeAllInOne && !updated.meetingMode) {
       realtimeAllInOne?.stop();
       realtimeAllInOne = null;
       if (updated.listening) {
@@ -1433,7 +1580,7 @@ function registerIpcHandlers() {
 
     // responseStyle 变更时，若 allInOne 正在运行需用新设置重建实例，
     // 否则旧实例仍持有旧的 systemPrompt 和 responseStyle，导致输出格式与 UI 显示不匹配。
-    if ('responseStyle' in partial && partial.responseStyle !== before.responseStyle && updated.useRealtimeAllInOne) {
+    if ('responseStyle' in partial && partial.responseStyle !== before.responseStyle && updated.useRealtimeAllInOne && !updated.meetingMode) {
       realtimeAllInOne?.stop();
       realtimeAllInOne = null;
       if (updated.listening) {
@@ -1443,21 +1590,16 @@ function registerIpcHandlers() {
 
     // 录音设备变更时，停掉所有当前监听实例，下次开始时用新设备重建。
     if ('audioDeviceId' in partial && partial.audioDeviceId !== before.audioDeviceId) {
-      realtimeAllInOne?.stop();
-      realtimeAllInOne = null;
-      realtimeTranscriber?.stop();
-      realtimeTranscriber = null;
-      audioListener?.stop();
-      audioListener = null;
+      teardownPrimaryListeners();
       if (updated.listening) {
-        const provider2 = updated.apiProvider ?? 'openai';
-        if (updated.useRealtimeAllInOne && provider2 === 'openai') {
-          startAllInOneListener().catch(console.error);
-        } else if (updated.useRealtimeAsr && provider2 === 'openai') {
-          startRealtimeListener().catch(console.error);
-        } else {
-          getSegmentListener().start();
-        }
+        startPrimaryListener().catch(console.error);
+      }
+      // 翻译模式的监听也要换设备
+      if (translateAudioListener) {
+        const wasActive = translateListeningActive;
+        translateAudioListener.stop();
+        translateAudioListener = null;
+        if (wasActive) getTranslateListener().start();
       }
     }
 
@@ -1646,6 +1788,61 @@ function registerIpcHandlers() {
   });
 
   // 组会模式：清空文档与索引
+  // ── 会议助手：画像 / 本周进展 / 会前准备 / 会中交互 / 跨会议记忆 ──────────
+  ipcMain.handle('meeting:getState', () => ({
+    ...getMeetingProfileState(),
+    transcript: meetingEngine.getTranscript()
+  }));
+  ipcMain.handle('meeting:setPersona', (_e, text: string) => {
+    setPersonaText(String(text ?? ''));
+    return { ok: true };
+  });
+  ipcMain.handle('meeting:setWeeklyNotes', (_e, text: string) => {
+    setWeeklyNotes(String(text ?? ''));
+    return { ok: true };
+  });
+  ipcMain.handle('meeting:clearPrep', () => {
+    setMeetingPrep(null);
+    return { ok: true };
+  });
+  ipcMain.handle('meeting:generatePrep', async () => {
+    try {
+      return { ok: true, prep: await meetingEngine.generatePrep() };
+    } catch (e) {
+      console.error('[Meeting] 生成会前准备失败', e);
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+  ipcMain.handle('meeting:draftPersona', async () => {
+    try {
+      return { ok: true, text: await meetingEngine.draftPersona() };
+    } catch (e) {
+      console.error('[Meeting] 生成画像草稿失败', e);
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+  ipcMain.handle('meeting:quickTranslate', async (_e, text: string) => {
+    try {
+      return { ok: true, ...(await meetingEngine.quickTranslate(String(text ?? ''))) };
+    } catch (e) {
+      console.error('[Meeting] 快捷口语失败', e);
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+  ipcMain.handle('meeting:answerNow', async () => {
+    if (!isMeetingAssistActive()) return { ok: false, error: '仅在组会模式或翻译总结模式下可用' };
+    return meetingEngine.answerNow();
+  });
+  ipcMain.handle('meeting:endSession', async () => meetingEngine.endSession());
+  ipcMain.handle('meeting:deleteSession', (_e, id: string) => {
+    deleteSession(String(id));
+    return { ok: true };
+  });
+  ipcMain.handle('meeting:clearSessions', () => {
+    clearSessions();
+    return { ok: true };
+  });
+
   ipcMain.handle('meeting:clearDocuments', async () => {
     clearDocsByType('meeting_doc');
     clearChunkEmbeddingsByDocType('meeting_doc');
@@ -1655,22 +1852,61 @@ function registerIpcHandlers() {
 
   // ── 翻译总结模式 ────────────────────────────────────────────────────────
   // 完全复用 AudioListener（与面试/组会模式相同的音频捕获路径），
-  // 区别仅在于把每个 VAD 分段积累到 translateAudioBuffer，
-  // 用户点「翻译总结」时再拼合送 Whisper + LLM。
+  // 每个 VAD 分段由会议引擎逐段转写，转写结果累积到 translatePendingLines。
+  // 点击或每分钟自动触发时，按 ~25s 切块送 Whisper，再交给 LLM 总结。
+
+  type TranslateChunkPayload = {
+    text: string;
+    done: boolean;
+    start?: boolean;
+    auto?: boolean;
+    cancel?: boolean;
+  };
+
+  function sendTranslateChunk(payload: TranslateChunkPayload) {
+    mainWindow?.webContents.send('translate:chunk', payload);
+  }
+
+  function stopTranslateAutoTimer() {
+    if (translateAutoTimer) {
+      clearTimeout(translateAutoTimer);
+      translateAutoTimer = null;
+    }
+  }
+
+  function scheduleTranslateAutoTimer() {
+    stopTranslateAutoTimer();
+    if (!translateListeningActive) return;
+    translateAutoTimer = setTimeout(() => {
+      translateAutoTimer = null;
+      enqueueTranslateSummarize({ autoTriggered: true }).catch(err => {
+        console.error('[Translate] 自动总结失败:', err);
+      });
+    }, TRANSLATE_AUTO_FLUSH_MS);
+  }
+
+  function enqueueTranslateSummarize(options?: { withReply?: boolean; autoTriggered?: boolean }) {
+    const run = translateSummarizeTail.then(
+      () => doTranslateSummarize(options),
+      () => doTranslateSummarize(options)
+    );
+    translateSummarizeTail = run.then(() => undefined, () => undefined);
+    return run;
+  }
 
   function getTranslateListener(): AudioListener {
     if (!translateAudioListener) {
       const s = getSettings();
       translateAudioListener = new AudioListener({
-        sampleRate: 16000,
+        sampleRate: TRANSLATE_SAMPLE_RATE,
         silenceMs: 1000,
         silenceThreshold: 0.01,
-        deviceId: resolveAudioDeviceId(s.audioDeviceId ?? -1)
+        deviceId: resolveAudioDeviceId(s.audioDeviceId ?? -1),
+        maxSegmentMs: MEETING_MAX_SEGMENT_MS
       });
-      // 每个静音切段都追加到缓冲区
+      // 每个静音切段立即逐段转写：既给翻译总结用，也给会议答题卡判断「是否点到我」
       translateAudioListener.on('segment', (seg: Buffer) => {
-        translateAudioBuffer.push(seg);
-        console.log(`[Translate] 收到语音段 ${seg.length} bytes，总段数 ${translateAudioBuffer.length}`);
+        meetingEngine.ingestAudio(seg, TRANSLATE_SAMPLE_RATE);
       });
       attachLevelForwarder(translateAudioListener);
     }
@@ -1679,6 +1915,99 @@ function registerIpcHandlers() {
 
   function flushTranslateAudioSegment() {
     translateAudioListener?.flushSegment();
+  }
+
+  async function doTranslateSummarize(options?: { withReply?: boolean; autoTriggered?: boolean }) {
+    const withReply = options?.withReply === true;
+    const autoTriggered = options?.autoTriggered === true;
+
+    stopTranslateAutoTimer();
+    // 把当前正在录但尚未自然静音切段的内容并入本次总结；不停止监听。
+    flushTranslateAudioSegment();
+
+    try {
+      // 等正在转写的段落完成，再取「上次总结以来」的全部新转写
+      await meetingEngine.waitForPendingTranscription(4000);
+      const pendingText = translatePendingLines.map(l => l.text).join(' ').trim();
+
+      if (!pendingText) {
+        if (autoTriggered) return { ok: true };
+        sendTranslateChunk({ text: '', done: false, start: true, auto: false });
+        sendTranslateChunk({ text: '（未检测到有效语音）', done: true });
+        return { ok: true };
+      }
+      if (autoTriggered && pendingText.length < TRANSLATE_AUTO_MIN_CHARS) {
+        console.log(`[Translate] 自动总结跳过：新转写仅 ${pendingText.length} 字`);
+        return { ok: true };
+      }
+
+      translatePendingLines = [];
+      console.log(`[Translate] 总结 ${pendingText.length} 字${autoTriggered ? '（自动）' : ''}`);
+      sendTranslateChunk({ text: '', done: false, start: true, auto: autoTriggered });
+
+      const settings = getSettings();
+      const provider = settings.apiProvider ?? 'openai';
+      const apiKey = await getApiKey(provider);
+      if (!apiKey) {
+        sendTranslateChunk({ text: '（未配置 API Key，无法翻译）', done: true });
+        return { ok: false };
+      }
+      const transcript = pendingText;
+
+      const OpenAI = (await import('openai')).default;
+      const baseURL = getOpenAICompatibleBaseUrl(provider) ?? undefined;
+      const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+
+      const streamOnce = async (system: string, prefix: string, doneAtEnd: boolean) => {
+        if (prefix) {
+          sendTranslateChunk({ text: prefix, done: false });
+        }
+        const stream = await client.chat.completions.create({
+          ...openaiChatModelOptions(settings.model, { temperature: 0.3 }),
+          stream: true,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: transcript }
+          ]
+        } as any) as unknown as AsyncIterable<any>;
+        let sentDone = false;
+        for await (const chunk of stream) {
+          const text = chunk.choices[0]?.delta?.content ?? '';
+          const done = chunk.choices[0]?.finish_reason != null;
+          if (text) {
+            sendTranslateChunk({ text, done: false });
+          }
+          if (done && doneAtEnd) {
+            sendTranslateChunk({ text: '', done: true });
+            sentDone = true;
+          }
+        }
+        if (doneAtEnd && !sentDone) {
+          sendTranslateChunk({ text: '', done: true });
+        }
+      };
+
+      // Same transcript, two prompts: Chinese summary, then a spoken reply in the configured answer language.
+      // 自动触发只做翻译总结，不生成回应。
+      if (withReply && !autoTriggered) {
+        const replyLanguage = settings.answerLanguage ?? 'en';
+        await streamOnce(TRANSLATE_SUMMARY_PROMPT, '总结：', false);
+        const persona = getMeetingProfileState().personaText.trim();
+        const replySystem = persona
+          ? `${buildTranslateReplyPrompt(replyLanguage)}\n\nReply as this person, in the first person, consistent with their role and facts:\n[MY PROFILE]\n${buildPersonaBlock(12_000)}`
+          : buildTranslateReplyPrompt(replyLanguage);
+        await streamOnce(replySystem, '\n回应：', true);
+      } else {
+        await streamOnce(TRANSLATE_SUMMARY_PROMPT, '', true);
+      }
+      return { ok: true };
+    } catch (e) {
+      console.error('[Translate] 翻译总结失败:', e);
+      sendTranslateChunk({ text: `（翻译失败：${(e as Error).message}）`, done: true });
+      return { ok: true };
+    } finally {
+      if (translateListeningActive) scheduleTranslateAutoTimer();
+    }
   }
 
   ipcMain.handle('translate:start', () => {
@@ -1691,94 +2020,31 @@ function registerIpcHandlers() {
     audioListener = null;
     updateSettings({ listening: false });
 
+    meetingEngine.beginSession();
+    if (!translateUnsubscribeLines) {
+      translateUnsubscribeLines = meetingEngine.onLine(line => {
+        if (translateListeningActive) translatePendingLines.push({ text: line.text, at: line.at });
+      });
+    }
     const listener = getTranslateListener();
     listener.start();
+    translateListeningActive = true;
+    scheduleTranslateAutoTimer();
     console.log('[Translate] 开始监听');
     return { ok: true };
   });
 
   ipcMain.handle('translate:stop', () => {
+    translateListeningActive = false;
+    stopTranslateAutoTimer();
     flushTranslateAudioSegment();
     translateAudioListener?.stop();
-    console.log('[Translate] 暂停监听，已积累段数:', translateAudioBuffer.length);
+    console.log('[Translate] 暂停监听，待总结转写条数:', translatePendingLines.length);
     return { ok: true };
   });
 
-  ipcMain.handle('translate:summarize', async () => {
-    // 把当前正在录但尚未自然静音切段的内容并入本次总结；不停止监听。
-    // 如果监听仍开启，后续音频会继续进入 translateAudioBuffer，供下一次点击总结。
-    flushTranslateAudioSegment();
-
-    if (translateAudioBuffer.length === 0) {
-      mainWindow?.webContents.send('translate:chunk', { text: '（未检测到有效语音）', done: true });
-      return { ok: true };
-    }
-
-    // 取出并清空缓冲区（下一段重新积累）
-    const segments = translateAudioBuffer.splice(0);
-    const pcm = Buffer.concat(segments);
-    console.log(`[Translate] 拼合 ${segments.length} 段，总 PCM 字节 ${pcm.length}`);
-
-    const settings = getSettings();
-    const openaiKey = await getApiKey('openai');
-    if (!openaiKey && !settings.mockAsr) {
-      mainWindow?.webContents.send('translate:chunk', { text: '（未配置 OpenAI API Key，无法转写音频）', done: true });
-      return { ok: false };
-    }
-
-    const provider = settings.apiProvider ?? 'openai';
-    const apiKey = await getApiKey(provider);
-    if (!apiKey) {
-      mainWindow?.webContents.send('translate:chunk', { text: '（未配置 API Key，无法翻译）', done: true });
-      return { ok: false };
-    }
-
-    try {
-      // 1. 转写（16 kHz mono 16-bit PCM → WAV → Whisper，与面试模式完全一致）
-      const transcript = await transcribeSegment(pcm, openaiKey ?? '', settings.mockAsr);
-      console.log('[Translate] 转写结果:', transcript?.slice(0, 120));
-
-      if (!transcript || transcript.trim().length < 5) {
-        mainWindow?.webContents.send('translate:chunk', { text: '（未检测到有效语音）', done: true });
-        return { ok: true };
-      }
-
-      // 2. 翻译总结（流式）
-      const OpenAI = (await import('openai')).default;
-      const baseURL = getOpenAICompatibleBaseUrl(provider) ?? undefined;
-      const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
-
-      const stream = await client.chat.completions.create({
-        model: settings.model,
-        temperature: 0.3,
-        stream: true,
-        messages: [
-          {
-            role: 'system',
-            content: '把用户给出的语音转写内容总结成 1 到 2 句自然中文。只输出总结正文，不要标题、不要要点、不要原文、不要逐句翻译。自动合并 ASR 重复词和口头禅，保留必要的专有名词和缩写。'
-          },
-          { role: 'user', content: transcript }
-        ]
-      });
-
-      let sentDone = false;
-      for await (const chunk of stream) {
-        const text = chunk.choices[0]?.delta?.content ?? '';
-        const done = chunk.choices[0]?.finish_reason != null;
-        if (text || done) {
-          mainWindow?.webContents.send('translate:chunk', { text, done });
-          if (done) sentDone = true;
-        }
-      }
-      if (!sentDone) {
-        mainWindow?.webContents.send('translate:chunk', { text: '', done: true });
-      }
-    } catch (e) {
-      console.error('[Translate] 翻译总结失败:', e);
-      mainWindow?.webContents.send('translate:chunk', { text: `（翻译失败：${(e as Error).message}）`, done: true });
-    }
-
-    return { ok: true };
+  ipcMain.handle('translate:summarize', async (_event, options?: { withReply?: boolean }) => {
+    return enqueueTranslateSummarize({ withReply: options?.withReply === true });
   });
 
   // Audio devices
@@ -1913,7 +2179,8 @@ function registerIpcHandlers() {
           getAnswerSummaries()
         );
         instructions = appendConciseContext(instructions);
-        const result = await generateReadableAnswerViaRealtime(apiKey, 'gpt-4o-mini-realtime-preview', instructions, q);
+        const realtimeModel = getRealtimeModelOrNull('openai') ?? 'gpt-realtime-mini';
+        const result = await generateReadableAnswerViaRealtime(apiKey, realtimeModel, instructions, q);
         out = {
           question_zh: result.question_zh ?? questionZh,
           concise_answer_en: result.concise_answer_en ?? '',
@@ -2066,31 +2333,15 @@ function registerIpcHandlers() {
     if (settings.translateMode) {
       return { listening: false } satisfies ListenerStatus;
     }
-    const provider = settings.apiProvider ?? 'openai';
-    // Realtime 仅 OpenAI 支持；其它服务商走段式 Whisper + 当前 LLM
-    if (settings.useRealtimeAllInOne && provider === 'openai') {
-      await startAllInOneListener();
-    } else if (settings.useRealtimeAsr && provider === 'openai') {
-      await startRealtimeListener();
-    } else {
-      getSegmentListener().start();
-    }
+    await startPrimaryListener();
 
     const s = updateSettings({ listening: true });
     return { listening: s.listening } satisfies ListenerStatus;
   });
 
   ipcMain.handle('listener:stop', async () => {
-    const settings = getSettings();
-
-    if (settings.useRealtimeAllInOne) {
-      // 卡片弹出时只停音频，不关 WebSocket（让模型把当前回复输完）
-      stopAllInOneListener(true);
-    } else if (settings.useRealtimeAsr) {
-      stopRealtimeListener();
-    } else if (audioListener) {
-      audioListener.stop();
-    }
+    // 卡片弹出时只停音频，不关 WebSocket（让模型把当前回复输完）
+    stopPrimaryListener(true);
 
     clearBuffer();
     const s = updateSettings({ listening: false });
@@ -2102,13 +2353,7 @@ function registerIpcHandlers() {
     const current = settings.listening;
 
     if (current) {
-      if (settings.useRealtimeAllInOne) {
-        stopAllInOneListener(false);
-      } else if (settings.useRealtimeAsr) {
-        stopRealtimeListener();
-      } else if (audioListener) {
-        audioListener.stop();
-      }
+      stopPrimaryListener(false);
       clearBuffer();
       const s = updateSettings({ listening: false });
       return { listening: s.listening } satisfies ListenerStatus;
@@ -2117,14 +2362,7 @@ function registerIpcHandlers() {
       if (settings.translateMode) {
         return { listening: false } satisfies ListenerStatus;
       }
-      const provider = settings.apiProvider ?? 'openai';
-      if (settings.useRealtimeAllInOne && provider === 'openai') {
-        await startAllInOneListener();
-      } else if (settings.useRealtimeAsr && provider === 'openai') {
-        await startRealtimeListener();
-      } else {
-        getSegmentListener().start();
-      }
+      await startPrimaryListener();
       const s = updateSettings({ listening: true });
       return { listening: s.listening } satisfies ListenerStatus;
     }
@@ -2135,6 +2373,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('screenshot:answer', async () => answerFromScreenshot());
+  ipcMain.handle('screenshot:answerFullScreen', async () => answerFromFullScreenScreenshot());
 
   // Window show / hide
   ipcMain.handle('window:hide', () => {
@@ -2230,6 +2469,11 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   clearSessionInterviewLog();
+  try {
+    flushMeetingProfile();
+  } catch (e) {
+    console.error('[Meeting] 保存会议数据失败', e);
+  }
 });
 
 app.on('will-quit', () => {

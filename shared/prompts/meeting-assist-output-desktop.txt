@@ -1,0 +1,14 @@
+[OUTPUT FORMAT]
+Return exactly one JSON object and nothing else. Emit the fields in this order (the client streams them as they arrive):
+{
+  "question_zh": "对方在问什么 — one short Simplified Chinese line",
+  "q_type": "progress | reasoning | detail | challenge | opinion | other",
+  "opener_en": "one short sentence the user can say immediately to start answering",
+  "points_en": ["3 short talking points, each under 15 words"],
+  "concise_answer_en": "2-3 sentence spoken answer the user can read out directly",
+  "expanded_answer_en": "4-6 sentence fuller spoken answer with rationale and specifics",
+  "source": "where the facts came from, e.g. 'This week #2; Profile: Scala AI architecture' — or 'not in material'",
+  "caution_zh": "简短中文提醒：不确定/不要承诺/保密的地方；没有则为空字符串"
+}
+Language: write opener_en, points_en, concise_answer_en and expanded_answer_en in {{ANSWER_LANGUAGE}} (the field names keep the _en suffix regardless). question_zh and caution_zh are always Simplified Chinese.
+If there is nothing for the user to answer, set question_zh to exactly "无法确定问题" and leave the other fields empty.

@@ -6,13 +6,24 @@ import ContextPanel from './components/ContextPanel';
 import SettingsPanel from './components/SettingsPanel';
 import MacSetupWizard from './components/MacSetupWizard';
 import TranslatePanel, { type TranslateEntry } from './components/TranslatePanel';
+import MeetingCard, { type MeetingCardState } from './components/MeetingCard';
+import { MeetingActionRow, MeetingLiveView, MyUpdateStrip, TranscriptList } from './components/MeetingLive';
+import MeetingPrepPanel, { SCENE_OPTIONS, TRIGGER_OPTIONS } from './components/MeetingPrepPanel';
+import QuickEnBox from './components/QuickEnBox';
 import {
   isNoiseOrUnrecognizedQuestionZh,
   type AssistEventPayload,
   type AssistJSON,
+  type MeetingCardChunk,
+  type MeetingPrep,
+  type MeetingScene,
+  type MeetingTranscriptLine,
+  type MeetingTrigger,
   type ReadableAssistJSON,
   type ResponseStyle
 } from '../electron/types';
+
+const MAX_MEETING_CARDS = 12;
 
 type Theme = 'dark' | 'light';
 
@@ -22,6 +33,11 @@ interface QueueItem {
 }
 
 const MAX_QUEUE = 3;
+
+function formatTranslateClock(): string {
+  const now = new Date();
+  return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+}
 
 const App: React.FC = () => {
   const [theme, setTheme] = useState<Theme>('dark');
@@ -46,6 +62,19 @@ const App: React.FC = () => {
   const [translateSummarizing, setTranslateSummarizing] = useState(false);
   const [translateEntries, setTranslateEntries] = useState<TranslateEntry[]>([]);
   const translateStreamingIdRef = useRef<number | null>(null);
+
+  // 会议助手（组会模式 & 翻译总结模式共用）
+  const [meetingCards, setMeetingCards] = useState<MeetingCardState[]>([]);
+  const meetingCardsRef = useRef<MeetingCardState[]>([]);
+  const [meetingCardIndex, setMeetingCardIndex] = useState(0);
+  const [meetingCardVisible, setMeetingCardVisible] = useState(false);
+  const [transcriptLines, setTranscriptLines] = useState<MeetingTranscriptLine[]>([]);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [meetingPrep, setMeetingPrep] = useState<MeetingPrep | null>(null);
+  const [meetingScene, setMeetingScene] = useState<MeetingScene>('weekly');
+  const [meetingTrigger, setMeetingTrigger] = useState<MeetingTrigger>('mention');
+  const [showMeetingPrep, setShowMeetingPrep] = useState(false);
+  const [showQuickEn, setShowQuickEn] = useState(false);
 
   // 流式卡片状态
   const [streamCard, setStreamCard] = useState<Partial<AssistJSON & ReadableAssistJSON> | null>(null);
@@ -76,6 +105,11 @@ const App: React.FC = () => {
         setAutoDismissCardOnNewQuestion(settings.autoDismissCardOnNewQuestion !== false);
         setMeetingMode(!!(settings as any).meetingMode);
         setTranslateMode(!!(settings as any).translateMode);
+        setMeetingScene(settings.meetingScene ?? 'weekly');
+        setMeetingTrigger(settings.meetingTrigger ?? 'mention');
+        const meetingState = await window.teleprompter.getMeetingState();
+        setMeetingPrep(meetingState.prep);
+        setTranscriptLines(meetingState.transcript ?? []);
         // 不自动开始监听，由用户每次打开后手动点击「开始监听」
 
         // Mac 平台：若首次使用则弹出音频引导（同步读取 process.platform，无 IPC 开销）
@@ -243,10 +277,43 @@ const App: React.FC = () => {
 
   // 面试/组会模式均已一次性生成 expanded_answer_en，不再需要二次预取
 
-  // 翻译总结模式：接收流式翻译 chunk
+  // 翻译总结模式：接收流式翻译 chunk（手动点击与每分钟自动总结共用）
   useEffect(() => {
-    const unsubscribe = (window.teleprompter as any).onTranslateChunk((data: { text: string; done: boolean }) => {
-      const { text, done } = data;
+    const unsubscribe = (window.teleprompter as any).onTranslateChunk((data: {
+      text: string;
+      done: boolean;
+      start?: boolean;
+      auto?: boolean;
+      cancel?: boolean;
+    }) => {
+      const { text, done, start, auto, cancel } = data;
+
+      if (cancel) {
+        const streamId = translateStreamingIdRef.current;
+        if (streamId !== null) {
+          setTranslateEntries(prev => prev.filter(e => e.id !== streamId));
+        }
+        translateStreamingIdRef.current = null;
+        setTranslateSummarizing(false);
+        return;
+      }
+
+      if (start) {
+        setTranslateSummarizing(true);
+        if (translateStreamingIdRef.current === null) {
+          const id = Date.now();
+          translateStreamingIdRef.current = id;
+          const timestamp = formatTranslateClock() + (auto ? ' · 自动' : '');
+          setTranslateEntries(prev => [{ id, text: text || '', timestamp, streaming: true }, ...prev]);
+        } else if (text) {
+          const streamId = translateStreamingIdRef.current;
+          setTranslateEntries(prev =>
+            prev.map(e => (e.id === streamId ? { ...e, text: e.text + text } : e))
+          );
+        }
+        return;
+      }
+
       setTranslateEntries(prev => {
         const streamId = translateStreamingIdRef.current;
         if (streamId !== null) {
@@ -286,32 +353,168 @@ const App: React.FC = () => {
     }
   };
 
-  const handleTranslateSummarize = async () => {
+  const handleTranslateSummarize = async (withReply = false) => {
     if (translateSummarizing) return;
     setTranslateSummarizing(true);
 
-    // 创建新条目（先占位，流式内容追加进去）
-    const id = Date.now();
-    const now = new Date();
-    const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-    translateStreamingIdRef.current = id;
-    setTranslateEntries(prev => [{ id, text: '', timestamp, streaming: true }, ...prev]);
-
     try {
-      await (window.teleprompter as any).translateSummarize();
+      await (window.teleprompter as any).translateSummarize({ withReply });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setTranslateEntries(prev =>
-        prev.map(entry =>
-          entry.id === id
-            ? { ...entry, text: `（翻译失败：${message}）`, streaming: false }
-            : entry
-        )
-      );
+      const streamId = translateStreamingIdRef.current;
+      const errorText = `（翻译失败：${message}）`;
+      if (streamId !== null) {
+        setTranslateEntries(prev =>
+          prev.map(entry =>
+            entry.id === streamId
+              ? { ...entry, text: errorText, streaming: false }
+              : entry
+          )
+        );
+      } else {
+        setTranslateEntries(prev => [
+          { id: Date.now(), text: errorText, timestamp: formatTranslateClock(), streaming: false },
+          ...prev
+        ]);
+      }
       translateStreamingIdRef.current = null;
       setTranslateSummarizing(false);
     }
   };
+
+  const refreshMeeting = useCallback(async () => {
+    try {
+      const [settings, st] = await Promise.all([
+        window.teleprompter.getSettings(),
+        window.teleprompter.getMeetingState()
+      ]);
+      setMeetingScene(settings.meetingScene ?? 'weekly');
+      setMeetingTrigger(settings.meetingTrigger ?? 'mention');
+      setMeetingPrep(st.prep);
+    } catch (e) {
+      console.error('refreshMeeting error', e);
+    }
+  }, []);
+
+  // 会议答题卡 / 实时转写 / 快捷框
+  useEffect(() => {
+    const applyCards = (next: MeetingCardState[]) => {
+      meetingCardsRef.current = next;
+      setMeetingCards(next);
+    };
+    const offCard = window.teleprompter.onMeetingCard((chunk: MeetingCardChunk) => {
+      const prev = meetingCardsRef.current;
+      if (chunk.skipped) {
+        if (prev.some(c => c.id === chunk.id)) {
+          const next = prev.filter(c => c.id !== chunk.id);
+          applyCards(next);
+          setMeetingCardIndex(i => Math.min(i, Math.max(0, next.length - 1)));
+        }
+        return;
+      }
+      const i = prev.findIndex(c => c.id === chunk.id);
+      if (i < 0) {
+        const next = [
+          ...prev,
+          {
+            id: chunk.id,
+            data: chunk.partial,
+            streaming: !chunk.done,
+            error: chunk.error,
+            trigger: chunk.trigger
+          }
+        ].slice(-MAX_MEETING_CARDS);
+        applyCards(next);
+        setMeetingCardIndex(next.length - 1);
+        setMeetingCardVisible(true);
+        return;
+      }
+      const next = prev.slice();
+      next[i] = {
+        ...next[i],
+        data: { ...next[i].data, ...chunk.partial },
+        streaming: !chunk.done,
+        error: chunk.error ?? next[i].error
+      };
+      applyCards(next);
+    });
+    const offLine = window.teleprompter.onMeetingTranscript(line => {
+      setTranscriptLines(prev => [...prev, line].slice(-200));
+    });
+    const offReset = window.teleprompter.onMeetingTranscriptReset(lines => {
+      setTranscriptLines(lines ?? []);
+    });
+    const offProfile = window.teleprompter.onMeetingProfileUpdated(() => {
+      refreshMeeting();
+    });
+    const offQuick = window.teleprompter.onMeetingOpenQuickBox(() => {
+      setShowQuickEn(true);
+    });
+    return () => {
+      offCard?.();
+      offLine?.();
+      offReset?.();
+      offProfile?.();
+      offQuick?.();
+    };
+  }, [refreshMeeting]);
+
+  const handleMeetingAnswerNow = useCallback(async () => {
+    try {
+      const r = await window.teleprompter.meetingAnswerNow();
+      if (!r.ok && r.error) alert(r.error);
+    } catch (e) {
+      console.error('meetingAnswerNow error', e);
+    }
+  }, []);
+
+  const handleEndMeeting = useCallback(async () => {
+    if (!window.confirm('结束本场会议？实时原文会清空，并在后台生成会议记忆供下次使用。')) return;
+    try {
+      await window.teleprompter.endMeetingSession();
+    } catch (e) {
+      console.error('endMeetingSession error', e);
+    }
+    meetingCardsRef.current = [];
+    setMeetingCards([]);
+    setMeetingCardIndex(0);
+    setMeetingCardVisible(false);
+  }, []);
+
+  const showLatestMeetingCard = () => {
+    if (meetingCardsRef.current.length === 0) return;
+    setMeetingCardIndex(meetingCardsRef.current.length - 1);
+    setMeetingCardVisible(true);
+  };
+
+  const meetingAssistActive = translateMode || meetingMode;
+  const activeMeetingCard = meetingCardVisible ? meetingCards[meetingCardIndex] : undefined;
+  const sceneLabel = SCENE_OPTIONS.find(o => o.value === meetingScene)?.label ?? meetingScene;
+  const triggerLabel = TRIGGER_OPTIONS.find(o => o.value === meetingTrigger)?.label ?? meetingTrigger;
+
+  const meetingCardNode = activeMeetingCard ? (
+    <MeetingCard
+      card={activeMeetingCard}
+      scene={meetingScene}
+      index={meetingCardIndex}
+      total={meetingCards.length}
+      onPrev={() => setMeetingCardIndex(i => Math.max(0, i - 1))}
+      onNext={() => setMeetingCardIndex(i => Math.min(meetingCards.length - 1, i + 1))}
+      onClose={() => setMeetingCardVisible(false)}
+      onRetry={handleMeetingAnswerNow}
+    />
+  ) : null;
+
+  const meetingActionRow = (
+    <MeetingActionRow
+      sceneLabel={sceneLabel}
+      triggerLabel={triggerLabel}
+      cardCount={meetingCards.length}
+      onAnswerNow={handleMeetingAnswerNow}
+      onShowCards={showLatestMeetingCard}
+      onEndMeeting={handleEndMeeting}
+    />
+  );
 
   const currentCard = useMemo(() => queue[0]?.payload.assist ?? null, [queue]);
   const hasCard = currentCard !== null || streamCard !== null;
@@ -428,6 +631,10 @@ const App: React.FC = () => {
 
   useHotkeys({
     onSpace: () => {
+      if (meetingAssistActive && meetingCardVisible) {
+        setMeetingCardVisible(false);
+        return;
+      }
       if (hasCard) {
         closeCurrentCard();
       }
@@ -469,6 +676,17 @@ const App: React.FC = () => {
     }
   };
 
+  const handleFullScreenScreenshotAnswer = async () => {
+    try {
+      const result = await window.teleprompter.answerFromFullScreenScreenshot();
+      if (!result.ok && result.error) {
+        console.error('Full screen screenshot answer failed:', result.error);
+      }
+    } catch (e) {
+      console.error('Full screen screenshot answer failed:', e);
+    }
+  };
+
   return (
     <div className="app-root">
       <FloatingWindow
@@ -479,13 +697,21 @@ const App: React.FC = () => {
         onThemeToggle={handleThemeToggle}
         onToggleListening={toggleListening}
         onScreenshotAnswer={handleScreenshotAnswer}
+        onFullScreenScreenshotAnswer={handleFullScreenScreenshotAnswer}
         onOpenContext={() => {
           setShowContext(true);
           setShowSettings(false);
+          setShowMeetingPrep(false);
         }}
         onOpenSettings={() => {
           setShowSettings(true);
           setShowContext(false);
+          setShowMeetingPrep(false);
+        }}
+        onOpenMeetingPrep={() => {
+          setShowMeetingPrep(true);
+          setShowContext(false);
+          setShowSettings(false);
         }}
         onExportInterview={handleExportInterview}
         exportInterviewBusy={exportInterviewBusy}
@@ -493,13 +719,44 @@ const App: React.FC = () => {
         queueSize={queue.length}
       >
         {translateMode ? (
-          <TranslatePanel
-            listening={translateListening}
-            summarizing={translateSummarizing}
-            entries={translateEntries}
-            onToggleListening={handleTranslateToggleListening}
-            onSummarize={handleTranslateSummarize}
-          />
+          <>
+            <TranslatePanel
+              listening={translateListening}
+              summarizing={translateSummarizing}
+              entries={translateEntries}
+              onToggleListening={handleTranslateToggleListening}
+              onSummarize={() => handleTranslateSummarize(false)}
+              onSummarizeWithReply={() => handleTranslateSummarize(true)}
+              meetingSection={
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                  {meetingScene === 'weekly' && <MyUpdateStrip prep={meetingPrep} />}
+                  {meetingActionRow}
+                  <div>
+                    <button className="meeting-update-toggle" onClick={() => setShowTranscript(v => !v)}>
+                      实时原文（{transcriptLines.length}）{showTranscript ? '▴' : '▾'}
+                    </button>
+                    {showTranscript && <TranscriptList lines={transcriptLines} maxHeight={120} />}
+                  </div>
+                </div>
+              }
+            />
+            {meetingCardNode && <div className="meeting-card-overlay">{meetingCardNode}</div>}
+          </>
+        ) : meetingMode ? (
+          meetingCardNode ?? (
+            <MeetingLiveView
+              lines={transcriptLines}
+              prep={meetingPrep}
+              showUpdate={meetingScene === 'weekly'}
+              sceneLabel={sceneLabel}
+              triggerLabel={triggerLabel}
+              listening={listening}
+              cardCount={meetingCards.length}
+              onAnswerNow={handleMeetingAnswerNow}
+              onShowCards={showLatestMeetingCard}
+              onEndMeeting={handleEndMeeting}
+            />
+          )
         ) : streamCard ? (
           <AssistCard
             assist={streamCard}
@@ -542,13 +799,25 @@ const App: React.FC = () => {
           />
         )}
 
+        {showMeetingPrep && (
+          <MeetingPrepPanel onClose={() => setShowMeetingPrep(false)} onChanged={refreshMeeting} />
+        )}
+
+        {showQuickEn && <QuickEnBox onClose={() => setShowQuickEn(false)} />}
+
         {showSettings && (
           <SettingsPanel
             onClose={() => setShowSettings(false)}
             onApiKeyChanged={onApiKeyChanged}
             onResponseStyleChanged={setResponseStyle}
             onAutoDismissCardOnNewQuestionChange={setAutoDismissCardOnNewQuestion}
-            onTranslateModeChanged={setTranslateMode}
+            onTranslateModeChanged={(enabled) => {
+              setTranslateMode(enabled);
+              if (!enabled) {
+                setTranslateListening(false);
+                setTranslateSummarizing(false);
+              }
+            }}
           />
         )}
 
@@ -566,6 +835,11 @@ const App: React.FC = () => {
             <div>
               <span className="kbd">Ctrl+Shift+H</span> 隐藏/显示窗口 · <span className="kbd">Ctrl+U</span> 资料库 · <span className="kbd">Esc</span> 隐藏提示栏
             </div>
+            {meetingAssistActive && (
+              <div>
+                <span className="kbd">Ctrl+Shift+1</span> 回答刚才的问题 · <span className="kbd">Ctrl+Shift+2</span> 中文→英文口语
+              </div>
+            )}
           </div>
         )}
       </FloatingWindow>

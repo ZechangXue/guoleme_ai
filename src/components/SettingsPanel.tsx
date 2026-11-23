@@ -198,7 +198,7 @@ const SettingsPanel: React.FC<Props> = ({
           </div>
           {settings.translateMode && (
             <div style={{ marginTop: 6, fontSize: 12, color: 'rgba(148,163,184,0.7)', lineHeight: 1.5 }}>
-              监听对方说的话，点击「翻译总结」将当前段落翻译成中文并提炼要点。
+              监听对方说的话，约每分钟自动翻译总结，也可随时点击按钮生成总结或回应。
             </div>
           )}
         </section>
@@ -437,7 +437,7 @@ const SettingsPanel: React.FC<Props> = ({
             />
             <div>
               <div style={{ fontWeight: 600 }}>
-                ⚡ gpt-4o-realtime 全内属（最低延迟，仅 OpenAI）
+                ⚡ Realtime 全内属（最低延迟，仅 OpenAI）
               </div>
               <div className="muted" style={{ marginTop: 2 }}>
                 模型直接听音频并边说边生成面试提词 JSON。当前仅 OpenAI 支持；其它服务商使用流式 Chat，效果类似。

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import OpenAI from 'openai';
 import type { ContextDocType } from './types';
 import { getApiKey } from './settingsStore';
+import { DEFAULT_RAG_MODEL, openaiChatModelOptions } from './providerConfig';
 
 function splitIntoChunks(text: string, maxChars = 600): string[] {
   const paragraphs = text
@@ -210,7 +211,7 @@ export async function analyzeDocumentForRag(
 
   // 简历/JD 分析目前只用于生成摘要和结构化 JSON，
   // 不在实时问答主链路里，但如果耗时过长会影响上传体验。
-  // 这里使用延迟更低的 gpt-4o-mini，同时仅做非常宽松的截断，
+  // 使用 gpt-5-nano，同时仅做非常宽松的截断，
   // 尽量覆盖整份简历（包括尾部的 RESEARCH EXPERIENCE 等重要段落），并打印 Prompt 便于排查。
   const userText = fullText.slice(0, 24000);
   const jdPart = options?.jdStructuredJson?.trim()
@@ -222,7 +223,7 @@ export async function analyzeDocumentForRag(
       : userText;
 
   console.log('[RAG-PROMPT] analyzeDocumentForRag');
-  console.log('  model = gpt-4o-mini, docType =', docType);
+  console.log('  model =', DEFAULT_RAG_MODEL, ', docType =', docType);
   if (docType === 'resume') {
     console.log('  jdHint =', jdPart ? `yes (${jdPart.length} chars)` : 'no');
   }
@@ -232,9 +233,7 @@ export async function analyzeDocumentForRag(
   console.log(userContent.slice(0, 4000));
 
   const res = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
-    temperature: 0.1,
-    response_format: { type: 'json_object' },
+    ...openaiChatModelOptions(DEFAULT_RAG_MODEL, { temperature: 0.1, json: true }),
     messages: [
       { role: 'system', content: sys },
       { role: 'user', content: userContent }

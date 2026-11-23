@@ -5,8 +5,14 @@ import type {
   Settings,
   ContextFile,
   ContextLabel,
-  ApiProvider
+  ApiProvider,
+  MeetingCardChunk,
+  MeetingPrep,
+  MeetingProfileState,
+  MeetingTranscriptLine
 } from '../electron/types';
+
+type MeetingResult<T = {}> = ({ ok: true } & T) | { ok: false; error: string };
 
 declare global {
   interface Window {
@@ -35,6 +41,7 @@ declare global {
       toggleListening: () => Promise<ListenerStatus>;
       getListenerStatus: () => Promise<ListenerStatus>;
       answerFromScreenshot: () => Promise<{ ok: boolean; error?: string }>;
+      answerFromFullScreenScreenshot: () => Promise<{ ok: boolean; error?: string }>;
 
       hideWindow: () => Promise<void>;
       showWindow: () => Promise<void>;
@@ -72,6 +79,32 @@ declare global {
       finalizeInterviewSessionExport: (
         tempPdfPath: string
       ) => Promise<{ ok: boolean; path?: string; error?: string }>;
+
+      // ── 会议助手 ──────────────────────────────────────────────
+      getMeetingState: () => Promise<MeetingProfileState & { transcript: MeetingTranscriptLine[] }>;
+      setMeetingPersona: (text: string) => Promise<{ ok: boolean }>;
+      setMeetingWeeklyNotes: (text: string) => Promise<{ ok: boolean }>;
+      generateMeetingPrep: () => Promise<MeetingResult<{ prep: MeetingPrep }>>;
+      clearMeetingPrep: () => Promise<{ ok: boolean }>;
+      draftMeetingPersona: () => Promise<MeetingResult<{ text: string }>>;
+      meetingQuickTranslate: (text: string) => Promise<MeetingResult<{ say: string; shorter: string }>>;
+      meetingAnswerNow: () => Promise<{ ok: boolean; error?: string }>;
+      endMeetingSession: () => Promise<{ ok: boolean }>;
+      deleteMeetingSession: (id: string) => Promise<{ ok: boolean }>;
+      clearMeetingSessions: () => Promise<{ ok: boolean }>;
+      onMeetingCard: (cb: (chunk: MeetingCardChunk) => void) => () => void;
+      onMeetingTranscript: (cb: (line: MeetingTranscriptLine) => void) => () => void;
+      onMeetingTranscriptReset: (cb: (lines: MeetingTranscriptLine[]) => void) => () => void;
+      onMeetingProfileUpdated: (cb: () => void) => () => void;
+      onMeetingOpenQuickBox: (cb: () => void) => () => void;
+      analyzeMeetingDocuments: () => Promise<unknown>;
+      clearMeetingDocuments: () => Promise<unknown>;
+      translateStart: () => Promise<{ ok: boolean }>;
+      translateStop: () => Promise<{ ok: boolean }>;
+      translateSummarize: (options?: { withReply?: boolean }) => Promise<{ ok: boolean }>;
+      onTranslateChunk: (
+        cb: (data: { text: string; done: boolean; start?: boolean; auto?: boolean; cancel?: boolean }) => void
+      ) => () => void;
 
       // ── Mac 音频引导（darwin 专属，其他平台返回 undefined） ────────────────
       macCheckBlackHole: () => Promise<{

@@ -1,9 +1,9 @@
 /**
  * RealtimeAllInOne
  *
- * 使用 gpt-4o-mini-realtime-preview 模型直接听音频并输出面试提词 JSON。
+ * 使用 gpt-realtime-mini 直接听音频并输出面试提词 JSON。
  * 架构：音频实时推送 → 模型边听边理解 → VAD 检测停顿 → 模型立刻输出 JSON（流式）
- * 对比传统方案：省去了 Whisper 转写延迟 + 单独 LLM 调用，感知延迟 ~300ms。
+ * 对比传统方案：省去了 Whisper 转写延迟 + 单独 LLM 调用，感知延迟更低。
  */
 
 import EventEmitter from 'node:events';
@@ -21,6 +21,7 @@ import {
   formatContextInstructionBlock,
   MEETING_SYSTEM_PROMPT
 } from './llmClient';
+import { REALTIME_OUTPUT_RULE } from './sharedPrompts';
 import {
   isNoiseOrUnrecognizedQuestionZh,
   type AnswerSummary,
@@ -38,7 +39,7 @@ export interface AllInOneStartHooks {
 
 interface AllInOneOptions {
   apiKey: string;
-  /** 默认 gpt-4o-mini-realtime-preview，也可换 gpt-4o-realtime-preview */
+  /** 默认 gpt-realtime-mini */
   model?: string;
   systemPrompt: string;
   contextSummary: ContextSummary;
@@ -240,10 +241,7 @@ ${conversation}${historyBlock}
 
         const instructions = `${this.buildInstructions()}
 
-[CRITICAL REALTIME OUTPUT RULE]
-Return exactly one JSON object and nothing else. Do not write prose before or after it.
-The object must contain: "question_zh", "concise_answer_en", and "expanded_answer_en".
-If you are tempted to answer normally, put that answer inside concise_answer_en and expanded_answer_en instead.`;
+${REALTIME_OUTPUT_RULE}`;
         console.log('[AllInOne][Prompt] instructions length =', instructions.length);
         if (DEBUG_REALTIME_EVENTS) {
           console.log('[AllInOne][Prompt] instructions =\n', instructions);

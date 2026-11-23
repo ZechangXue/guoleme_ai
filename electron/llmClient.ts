@@ -11,7 +11,19 @@ import type {
 import { SKIP_TURN_QUESTION_ZH } from './types';
 import { getAnswerSummaries } from './contextStore';
 import { prepareResumeJsonForPrompt } from './resumeJdRelevance';
-import { isOpenAICompatible, getOpenAICompatibleBaseUrl } from './providerConfig';
+import { isOpenAICompatible, getOpenAICompatibleBaseUrl, openaiChatModelOptions } from './providerConfig';
+import {
+  READABLE_SYSTEM_PROMPT as SHARED_READABLE_SYSTEM_PROMPT,
+  CONCISE_JSON_OUTPUT_INNER as SHARED_CONCISE_JSON_OUTPUT_INNER,
+  READABLE_JSON_OUTPUT_BLOCK as SHARED_READABLE_JSON_OUTPUT_BLOCK,
+  MEETING_SYSTEM_PROMPT as SHARED_MEETING_SYSTEM_PROMPT,
+  CONTEXT_INSTRUCTION_CHAT,
+  CONTEXT_INSTRUCTION_REALTIME,
+  MEETING_OUTPUT_FORMAT,
+  ANSWER_TRANSLATE_ZH_PROMPT,
+  SESSION_SUMMARY_PROMPT,
+  IMAGE_QUESTION_PROMPT
+} from './sharedPrompts';
 
 /** 结构化上下文单段最大字符数（防超长简历撑爆上下文；截断处仍保留 JSON 前缀便于模型理解） */
 const PROMPT_MAX_STRUCTURED: Record<'resume' | 'jd' | 'notes', number> = {
@@ -39,26 +51,7 @@ export function capStructuredJsonForPrompt(
 // Readable Answer Mode 系统提示（与 concise 一致：结构标签 + 单次 [OUTPUT]）
 // ─────────────────────────────────────────────
 
-export const READABLE_SYSTEM_PROMPT = `[ROLE]
-Interview realtime prompter — answer as the candidate, interview-ready spoken English.
-
-[TASK]
-From the interviewer's question, answer using JD + resume context when relevant.
-
-[STYLE]
-Senior engineer; concrete; non-generic; ground claims in provided materials.
-
-[OUTPUT]
-JSON only (no markdown, no prose outside the object):
-{
-  "question_zh": string,
-  "concise_answer_en": string,
-  "expanded_answer_en": string
-}
-question_zh: 1 short Chinese line (core of the question).
-concise_answer_en: 1 English sentence, direct, natural to read aloud.
-expanded_answer_en: 3–4 English sentences with supporting detail, conversational. On elaborate follow-ups, add new substance vs the prior answer—avoid only paraphrasing the same bullets.
-If input is clearly pure noise / gibberish / no interview question (not merely unclear audio), set question_zh exactly to "无法确定问题" and keep other fields minimal—the client will skip this turn silently. For any plausible interview question (including fragmented or accented audio), never use that string; give substantive answers.`.trim();
+export const READABLE_SYSTEM_PROMPT = SHARED_READABLE_SYSTEM_PROMPT;
 
 // ─────────────────────────────────────────────
 // System prompt：去掉用户自带的重复「强制输出格式」块，再由本文件统一追加 [OUTPUT]。
@@ -95,27 +88,10 @@ function normalizeUserSystemPromptForLlm(userSystemPrompt: string): string {
 }
 
 /** 面试模式 [OUTPUT] 段（concise + expanded，两者一次性生成） */
-export const CONCISE_JSON_OUTPUT_INNER = `JSON only (no markdown, no prose outside the object).
-Fields (streaming client reads in generation order — follow exactly):
-1) "question_zh" 2) "concise_answer_en" 3) "expanded_answer_en"
-Example shape: {"question_zh":"…","concise_answer_en":"…","expanded_answer_en":"…"}
-question_zh: 1 short Chinese line.
-concise_answer_en: 1 English sentence; direct, senior engineer tone; do not restate the question.
-expanded_answer_en: 3–4 English sentences; concrete detail, trade-offs, real examples. If a follow-up asks to elaborate, add new substance—do not only restate the prior answer's bullets.
-Pure noise only → question_zh exactly "无法确定问题" (client skips silently). Otherwise substantive answer; never use that string for real questions.`.trim();
+export const CONCISE_JSON_OUTPUT_INNER = SHARED_CONCISE_JSON_OUTPUT_INNER;
 
 /** 可读模式 [OUTPUT] 段（含 [OUTPUT] 标题行） */
-export const READABLE_JSON_OUTPUT_BLOCK = `[OUTPUT]
-JSON only (no markdown, no prose outside the object):
-{
-  "question_zh": string,
-  "concise_answer_en": string,
-  "expanded_answer_en": string
-}
-question_zh: 1 short Chinese line.
-concise_answer_en: 1 English sentence, natural to read aloud.
-expanded_answer_en: 3–4 English sentences, conversational detail. If the user asks to elaborate on the same topic as the last turn, include **new** angles (metrics, trade-offs, steps)—do not only restate the prior answer’s bullets.
-Pure noise only → question_zh exactly "无法确定问题" (client skips silently). Otherwise substantive; never use that string for real questions.`.trim();
+export const READABLE_JSON_OUTPUT_BLOCK = SHARED_READABLE_JSON_OUTPUT_BLOCK;
 
 export function buildConciseSystemPrompt(userSystemPrompt: string): string {
   const base = buildBaseInterviewPrompt(normalizeUserSystemPromptForLlm(userSystemPrompt));
@@ -204,18 +180,7 @@ ${lead}
 
 /** 上下文行为约束（替代原 FOLLOW_UP / THREAD_ANCHOR / ELABORATION 多段） */
 export function formatContextInstructionBlock(mode: 'chat' | 'realtime'): string {
-  const audioLine =
-    mode === 'realtime'
-      ? '\n- In this mode, **CURRENT_QUESTION** is always what the interviewer says in the **live audio** for the turn you are answering (there is no duplicate text line for it).'
-      : '';
-  return `
-[INSTRUCTION]
-- Always answer **CURRENT_QUESTION**.${audioLine}
-- Use **[CONVERSATION]** for continuity only (prior interviewer questions and your prior guidance).
-- If **CURRENT_QUESTION** is a follow-up or asks for more detail, continue the previous answer naturally; add new substance—do not only paraphrase the same bullets.
-- Do **not** switch to a different topic unless the interviewer clearly changed subject.
-- Use **[RESUME]**, **[JD]**, and **[NOTES]** only when they help answer **CURRENT_QUESTION**; do not redirect to unrelated background.
-`.trim();
+  return mode === 'realtime' ? CONTEXT_INSTRUCTION_REALTIME : CONTEXT_INSTRUCTION_CHAT;
 }
 
 function looksLikeResumeStructuredJson(s: string): boolean {
@@ -346,9 +311,7 @@ export async function generateCustomSystemPrompt(
 
   // Step 1：结构化提取 JD / 简历 / Notes 中的关键信息
   const extractRes = await client.chat.completions.create({
-    model,
-    temperature: 0.2,
-    response_format: { type: 'json_object' },
+    ...openaiChatModelOptions(model, { temperature: 0.2, json: true }),
     messages: [
       {
         role: 'system',
@@ -441,13 +404,10 @@ export async function generateAssistStream(
   );
 
   const stream = await client.chat.completions.create({
-    model,
+    ...openaiChatModelOptions(model, { temperature: 0.2, maxTokens: 700, json: true }),
     stream: true,
-    temperature: 0.2,
-    max_tokens: 700,
-    response_format: { type: 'json_object' },
     messages: [{ role: 'system', content }]
-  });
+  } as any) as unknown as AsyncIterable<any>;
 
   let accumulated = '';
   let emittedQuestion = false;
@@ -626,11 +586,8 @@ async function callModelReadable(
   systemMessage: { role: 'system'; content: string }
 ): Promise<ReadableAssistJSON> {
   const response = await client.chat.completions.create({
-    model,
-    messages: [systemMessage],
-    temperature: 0.2,
-    max_tokens: 600,
-    response_format: { type: 'json_object' }
+    ...openaiChatModelOptions(model, { temperature: 0.2, maxTokens: 600, json: true }),
+    messages: [systemMessage]
   });
 
   const raw = response.choices[0]?.message?.content ?? '';
@@ -671,18 +628,11 @@ export async function translateAssistAnswersToChinese(
 
   const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
   const response = await client.chat.completions.create({
-    model,
-    temperature: 0,
-    max_tokens: 1200,
-    response_format: { type: 'json_object' },
+    ...openaiChatModelOptions(model, { temperature: 0, maxTokens: 1200, json: true }),
     messages: [
       {
         role: 'system',
-        content: `Translate the answer fields into Simplified Chinese.
-Preserve the exact meaning, specificity, tone, and structure of the original answer.
-Do not add new facts, remove details, shorten, expand, or rewrite the answer into a different response.
-Keep field names unchanged. Keep code, API names, library names, model names, and common technical terms in English when natural.
-Return JSON only with any of these fields that are present: question_zh, concise_answer_en, expanded_answer_en.`
+        content: ANSWER_TRANSLATE_ZH_PROMPT
       },
       {
         role: 'user',
@@ -738,10 +688,8 @@ async function callOnce(
   systemMessage: { role: 'system'; content: string }
 ): Promise<AssistJSON> {
   const response = await client.chat.completions.create({
-    model,
-    messages: [systemMessage],
-    temperature: 0.2,
-    response_format: { type: 'json_object' }
+    ...openaiChatModelOptions(model, { temperature: 0.2, json: true }),
+    messages: [systemMessage]
   });
 
   const raw = response.choices[0]?.message?.content ?? '';
@@ -863,10 +811,11 @@ export async function generateAssistFromImage(
       );
 
   const response = await client.chat.completions.create({
-    model,
-    temperature: 0.2,
-    max_tokens: responseStyle === 'readable' || meetingContent ? 800 : 500,
-    response_format: { type: 'json_object' },
+    ...openaiChatModelOptions(model, {
+      temperature: 0.2,
+      maxTokens: responseStyle === 'readable' || meetingContent ? 800 : 500,
+      json: true
+    }),
     messages: [
       { role: 'system', content: systemContent },
       {
@@ -874,7 +823,7 @@ export async function generateAssistFromImage(
         content: [
           {
             type: 'text',
-            text: 'Read the selected screenshot as the current question/input. If it is captions or text, answer it normally. If it contains code, solve or explain the code issue and include concrete code/fixes where useful. Return JSON only.'
+            text: IMAGE_QUESTION_PROMPT
           },
           {
             type: 'image_url',
@@ -929,7 +878,7 @@ export async function generateAssistGeminiFromImage(
       contents: [{
         parts: [
           {
-            text: 'Read the selected screenshot as the current question/input. If it is captions or text, answer it normally. If it contains code, solve or explain the code issue and include concrete code/fixes where useful. Return JSON only.'
+            text: IMAGE_QUESTION_PROMPT
           },
           {
             inlineData: {
@@ -960,8 +909,7 @@ export async function testConnectionOpenAICompatible(
   try {
     const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
     await client.chat.completions.create({
-      model,
-      max_tokens: 5,
+      ...openaiChatModelOptions(model, { maxTokens: 64 }),
       messages: [{ role: 'user', content: 'Hi' }]
     });
     return { ok: true };
@@ -1113,17 +1061,7 @@ export async function generateAssistGemini(
  * 组会模式系统指令。
  * 核心原则：以文档为主要信息源，结合通用知识理解背后逻辑，像真正懂这个项目的人一样回答。
  */
-export const MEETING_SYSTEM_PROMPT = `You are a knowledgeable assistant helping present and explain a project during a meeting or technical review.
-
-You have carefully read and internalized the document(s) in [DOCUMENT CONTENT]. Think of yourself as a team member who deeply understands this material — not just what it says, but WHY the decisions were made and how the pieces connect.
-
-HOW TO ANSWER:
-1. Primary source: ground your answer in the document. If something is explicitly stated, use it.
-2. You may use your broader knowledge to explain, contextualize, and enrich — but always connect back to the document's actual content and decisions.
-3. Understand the reasoning behind design choices, not just what they are. Connect related information across the document (e.g. link FAQ rationale to pipeline architecture decisions).
-4. Respond in the same language as the question.
-5. Think like someone who has internalized this project, not someone doing a database lookup.
-6. If something is genuinely not covered by the document, say so briefly, then offer your best inference based on the document's overall context and approach.`.trim();
+export const MEETING_SYSTEM_PROMPT = SHARED_MEETING_SYSTEM_PROMPT;
 
 /**
  * 构建组会模式的完整 system content。
@@ -1142,14 +1080,7 @@ export function buildMeetingSystemContent(
     ? `[DOCUMENT CONTENT]\n${fullContent.trim()}`
     : `[DOCUMENT CONTENT]\n(No documents uploaded yet. Please upload your project documents first.)`;
 
-  const outputFormat = `[OUTPUT FORMAT]
-JSON only, no extra text outside the object:
-{
-  "question_zh": "one-line summary of what was asked (match the language of the question)",
-  "concise_answer_en": "direct answer in 2-3 sentences — give the core conclusion and the key reason behind it",
-  "expanded_answer_en": "deeper explanation in 4-6 sentences — cover the design reasoning, trade-offs, how it connects to other parts of the system, and any relevant context"
-}
-Only set question_zh to exactly "无法确定问题" when there is genuinely no recognizable question at all (pure noise). For any real question, always give a substantive answer.`;
+  const outputFormat = MEETING_OUTPUT_FORMAT;
 
   return `${MEETING_SYSTEM_PROMPT}
 
@@ -1188,13 +1119,10 @@ export async function generateMeetingAssistStream(
   );
 
   const stream = await client.chat.completions.create({
-    model,
+    ...openaiChatModelOptions(model, { temperature: 0.2, maxTokens: 1000, json: true }),
     stream: true,
-    temperature: 0.2,
-    max_tokens: 1000,
-    response_format: { type: 'json_object' },
     messages: [{ role: 'system', content }]
-  });
+  } as any) as unknown as AsyncIterable<any>;
 
   let accumulated = '';
   let emittedQuestion = false;
@@ -1262,11 +1190,7 @@ export async function generateMeetingAssistStream(
 // 一键导出：本次会话实录 → 中文面试总结（不进入答题 prompt）
 // ─────────────────────────────────────────────
 
-const INTERVIEW_SESSION_SUMMARY_SYSTEM = `你是面试复盘助手。根据用户提供的「本次面试全部问答记录」，用中文输出简洁总结（约 300–500 字），包含：
-1）面试官主要考察方向或题型；
-2）反复出现或深挖的主题；
-3）候选人可重点巩固的建议。
-不要重复照抄原文，不要编造记录中未出现的问题。`.trim();
+const INTERVIEW_SESSION_SUMMARY_SYSTEM = SESSION_SUMMARY_PROMPT;
 
 export async function generateInterviewSessionSummary(
   transcriptText: string,
@@ -1337,13 +1261,11 @@ export async function generateInterviewSessionSummary(
       ...(baseURL ? { baseURL } : {})
     });
     const response = await client.chat.completions.create({
-      model: opts.model,
+      ...openaiChatModelOptions(opts.model, { temperature: 0.35, maxTokens: 1200 }),
       messages: [
         { role: 'system', content: INTERVIEW_SESSION_SUMMARY_SYSTEM },
         { role: 'user', content: user }
-      ],
-      temperature: 0.35,
-      max_tokens: 1200
+      ]
     });
     const out = String(response.choices[0]?.message?.content ?? '').trim();
     return out || '（模型未返回总结）';

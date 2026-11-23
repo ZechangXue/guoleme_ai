@@ -9,8 +9,11 @@ interface Props {
   onThemeToggle: () => void;
   onToggleListening: () => void;
   onScreenshotAnswer?: () => void;
+  onFullScreenScreenshotAnswer?: () => void;
   onOpenContext: () => void;
   onOpenSettings: () => void;
+  /** 会议准备：场景 / 画像 / 本周进展 / 会议记忆 */
+  onOpenMeetingPrep?: () => void;
   onExportInterview?: () => void;
   /** 正在生成 PDF（总结+打印），按钮显示「导出中」并禁用 */
   exportInterviewBusy?: boolean;
@@ -56,8 +59,10 @@ const FloatingWindow: React.FC<Props> = ({
   onThemeToggle,
   onToggleListening,
   onScreenshotAnswer,
+  onFullScreenScreenshotAnswer,
   onOpenContext,
   onOpenSettings,
+  onOpenMeetingPrep,
   onExportInterview,
   exportInterviewBusy = false,
   onCloseWindow,
@@ -106,6 +111,16 @@ const FloatingWindow: React.FC<Props> = ({
           {onScreenshotAnswer && (
             <button className="icon-btn" onClick={onScreenshotAnswer} title="截图识别回答">
               ⛶
+            </button>
+          )}
+          {onFullScreenScreenshotAnswer && (
+            <button className="icon-btn" onClick={onFullScreenScreenshotAnswer} title="整屏截图回答">
+              ▣
+            </button>
+          )}
+          {onOpenMeetingPrep && (
+            <button className="icon-btn" onClick={onOpenMeetingPrep} title="会议准备：场景 / 我的画像 / 本周进展 / 会议记忆">
+              🎯
             </button>
           )}
           <button className="icon-btn" onClick={onOpenContext} title="资料库 (Ctrl+U)">

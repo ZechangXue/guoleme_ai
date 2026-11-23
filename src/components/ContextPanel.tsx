@@ -107,6 +107,9 @@ const ContextPanel: React.FC<Props> = ({ onClose, meetingMode = false, onToggleM
                 已上传 {meetingFiles.length} 份文档，可直接开始提问。
               </div>
             )}
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              个人画像、本周进展、会议场景在顶栏 🎯「会议准备」里设置。
+            </div>
           </div>
         ) : (
           // ── 面试模式上传区 ─────────────────────────────────────────

@@ -13,6 +13,9 @@ interface Props {
   entries: TranslateEntry[];
   onToggleListening: () => void;
   onSummarize: () => void;
+  onSummarizeWithReply: () => void;
+  /** 会议助手区域（汇报稿 / 回答刚才的问题 / 实时原文），渲染在按钮行下方 */
+  meetingSection?: React.ReactNode;
 }
 
 const TranslatePanel: React.FC<Props> = ({
@@ -20,7 +23,9 @@ const TranslatePanel: React.FC<Props> = ({
   summarizing,
   entries,
   onToggleListening,
-  onSummarize
+  onSummarize,
+  onSummarizeWithReply,
+  meetingSection
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -90,7 +95,30 @@ const TranslatePanel: React.FC<Props> = ({
         >
           {summarizing ? '总结中…' : '翻译总结'}
         </button>
+
+        <button
+          className="btn"
+          style={{
+            flex: 1,
+            background: summarizing
+              ? 'rgba(20, 184, 166, 0.15)'
+              : 'rgba(20, 184, 166, 0.26)',
+            border: '1px solid rgba(45, 212, 191, 0.45)',
+            color: '#99f6e4',
+            fontWeight: 600,
+            justifyContent: 'center',
+            padding: '8px 12px',
+            fontSize: 13,
+            opacity: summarizing ? 0.7 : 1
+          }}
+          onClick={onSummarizeWithReply}
+          disabled={summarizing}
+        >
+          {summarizing ? '生成中…' : '总结回应'}
+        </button>
       </div>
+
+      {meetingSection}
 
       {/* 结果展示区 */}
       <div
@@ -115,7 +143,7 @@ const TranslatePanel: React.FC<Props> = ({
             textAlign: 'center',
             marginTop: 20
           }}>
-            点击「开始监听」后再点「翻译总结」，即可翻译当前段落
+            点击「开始监听」后，约每分钟自动总结，也可随时点击按钮
           </div>
         ) : (
           entries.map((entry, idx) => (
@@ -175,7 +203,7 @@ const TranslatePanel: React.FC<Props> = ({
           textAlign: 'center',
           flexShrink: 0
         }}>
-          正在监听…点击「翻译总结」生成当前段落翻译
+          正在监听…约每分钟自动总结，也可随时点击按钮
         </div>
       )}
     </div>
