@@ -4,6 +4,7 @@ enum ProviderConfig {
     static func defaultModel(for provider: ApiProvider) -> String {
         switch provider {
         case .openai: return "gpt-5-mini"
+        case .anthropic: return "claude-opus-5-5"
         case .google: return "gemini-2.0-flash"
         case .deepseek: return "deepseek-chat"
         case .qwen: return "qwen-turbo"
@@ -17,6 +18,7 @@ enum ProviderConfig {
     static func chatBaseURL(for provider: ApiProvider) -> URL {
         switch provider {
         case .openai: return URL(string: "https://api.openai.com/v1")!
+        case .anthropic: return URL(string: "https://api.anthropic.com/v1")!
         case .deepseek: return URL(string: "https://api.deepseek.com")!
         case .qwen: return URL(string: "https://dashscope.aliyuncs.com/compatible-mode/v1")!
         case .google: return URL(string: "https://generativelanguage.googleapis.com/v1beta")!
@@ -24,7 +26,7 @@ enum ProviderConfig {
     }
 
     static var supportsVision: (ApiProvider) -> Bool = { provider in
-        provider == .openai || provider == .google
+        provider == .openai || provider == .anthropic || provider == .google
     }
 
     static func isGpt5Family(_ model: String) -> Bool {

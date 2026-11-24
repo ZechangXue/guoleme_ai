@@ -69,6 +69,14 @@ struct SettingsView: View {
                     if let testMessage {
                         Text(testMessage).font(.footnote)
                     }
+                    if model.settings.apiProvider == .anthropic {
+                        Text(model.tr(
+                            "Claude 负责回答、翻译、总结和会前准备；语音转写仍用 OpenAI（Whisper），请同时保存 OpenAI Key。",
+                            "Claude handles answers, translation, summaries and prep; speech-to-text still uses OpenAI Whisper, so keep an OpenAI key saved too."
+                        ))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
                     Button(model.t(.clearKey), role: .destructive) {
                         KeychainStore.delete(provider: model.settings.apiProvider)
                         model.refreshKeyStatus()

@@ -1,6 +1,7 @@
 import type { ContextDocType, SemanticChunk, GeneratedQuestion } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
+import { createChatClient } from './claudeChat';
 import { getApiKey } from './settingsStore';
 import { createEmbedding } from './embeddings';
 import { DEFAULT_MODEL_BY_PROVIDER, openaiChatModelOptions } from './providerConfig';
@@ -45,7 +46,7 @@ async function generateRawQuestions(
   const apiKey = await getApiKey();
   if (!apiKey) return [];
 
-  const client = new OpenAI({ apiKey });
+  const client = createChatClient(apiKey);
   const maxQuestions = 12;
 
   const system = buildQuestionSystemPrompt(docType);

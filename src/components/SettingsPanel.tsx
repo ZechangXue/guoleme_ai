@@ -3,6 +3,7 @@ import type { Settings, ResponseStyle, ApiProvider } from '../../electron/types'
 
 const PROVIDER_OPTIONS: { value: ApiProvider; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
+  { value: 'anthropic', label: 'Claude (Anthropic)' },
   { value: 'google', label: 'Google (Gemini)' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'qwen', label: '千问 (Qwen)' },
@@ -223,7 +224,7 @@ const SettingsPanel: React.FC<Props> = ({
             <input
               className="input"
               type={isOllama ? 'text' : 'password'}
-              placeholder={isOllama ? 'http://localhost:11434' : 'sk-...'}
+              placeholder={isOllama ? 'http://localhost:11434' : provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
               value={apiKeyInput}
               onChange={e => setApiKeyInput(e.target.value)}
               style={{ flex: 1, minWidth: 120 }}
@@ -266,6 +267,11 @@ const SettingsPanel: React.FC<Props> = ({
               ? '本地 Ollama 服务地址，保存后可在下方选择模型。'
               : 'Key 保存在本机 keytar，不会写入代码；丢失需自行在对应后台重新生成。'}
           </div>
+          {provider === 'anthropic' && (
+            <div className="muted" style={{ marginTop: 4 }}>
+              Claude 负责所有回答、翻译、总结和会前准备；语音转写仍用 OpenAI（Whisper），请保留已保存的 OpenAI Key。
+            </div>
+          )}
         </section>
 
         <section>

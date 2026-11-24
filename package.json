@@ -20,6 +20,7 @@
     "lint": "echo \"no lint configured\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.7.0",
     "@types/ws": "^8.18.1",
     "keytar": "^7.9.0",
     "mammoth": "^1.6.0",

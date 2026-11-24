@@ -7,6 +7,7 @@
  * 另外负责：会前准备、画像草稿、中文→英文快捷口语、会后记忆提炼。
  */
 import OpenAI from 'openai';
+import { createChatClient } from './claudeChat';
 import { transcribeSegmentVerbose, transcribeLongPcm } from './asrService';
 import { getSettings, getApiKey } from './settingsStore';
 import { getOpenAICompatibleBaseUrl, openaiChatModelOptions } from './providerConfig';
@@ -103,7 +104,7 @@ async function getChatClient(settings: Settings): Promise<{ client: OpenAI; mode
     };
   }
   const baseURL = getOpenAICompatibleBaseUrl(provider);
-  return { client: new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) }), model: settings.model };
+  return { client: createChatClient(apiKey, baseURL), model: settings.model };
 }
 
 async function completeJson<T>(system: string, user: string, maxTokens: number): Promise<T> {

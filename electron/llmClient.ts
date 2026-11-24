@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { createChatClient } from './claudeChat';
 import type {
   AnswerSummary,
   AssistJSON,
@@ -269,7 +270,7 @@ export async function generateAssist(
     } as AssistJSON;
   }
 
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  const client = createChatClient(apiKey, baseURL);
   // 统一：所有模式共享同一「候选人&JD 个性化」base prompt，仅在尾部附加不同输出格式约束。
   const effectivePrompt =
     responseStyle === 'readable'
@@ -307,7 +308,7 @@ export async function generateCustomSystemPrompt(
   contextSummary: ContextSummary,
   baseURL?: string
 ): Promise<string> {
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  const client = createChatClient(apiKey, baseURL);
 
   // Step 1：结构化提取 JD / 简历 / Notes 中的关键信息
   const extractRes = await client.chat.completions.create({
@@ -390,7 +391,7 @@ export async function generateAssistStream(
   structured?: { jd: string; resume: string; notes: string },
   documentContent?: string
 ): Promise<void> {
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  const client = createChatClient(apiKey, baseURL);
   const effectivePrompt = buildConciseSystemPrompt(systemPrompt);
   const content = buildSystemContent(
     effectivePrompt,
@@ -612,7 +613,7 @@ export async function generateReadableAnswerWithContent(
   systemContent: string,
   baseURL?: string
 ): Promise<ReadableAssistJSON> {
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  const client = createChatClient(apiKey, baseURL);
   return callModelReadable(client, model, { role: 'system', content: systemContent });
 }
 
@@ -626,7 +627,7 @@ export async function translateAssistAnswersToChinese(
   const expanded = assist.expanded_answer_en?.trim();
   if (!concise && !expanded) return assist;
 
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  const client = createChatClient(apiKey, baseURL);
   const response = await client.chat.completions.create({
     ...openaiChatModelOptions(model, { temperature: 0, maxTokens: 1200, json: true }),
     messages: [
@@ -789,7 +790,7 @@ export async function generateAssistFromImage(
   documentContent?: string,
   meetingContent?: { fullContent: string; hasDocuments: boolean }
 ): Promise<AssistJSON | ReadableAssistJSON> {
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  const client = createChatClient(apiKey, baseURL);
   const systemContent = meetingContent
     ? buildMeetingSystemContent(
         meetingContent.fullContent,
@@ -907,7 +908,7 @@ export async function testConnectionOpenAICompatible(
   model: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+    const client = createChatClient(apiKey, baseURL);
     await client.chat.completions.create({
       ...openaiChatModelOptions(model, { maxTokens: 64 }),
       messages: [{ role: 'user', content: 'Hi' }]
@@ -1110,7 +1111,7 @@ export async function generateMeetingAssistStream(
   baseURL?: string,
   hasDocuments?: boolean
 ): Promise<void> {
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  const client = createChatClient(apiKey, baseURL);
   const content = buildMeetingSystemContent(
     fullContent,
     questionRaw,
@@ -1256,10 +1257,7 @@ export async function generateInterviewSessionSummary(
     const k = apiKey ?? '';
     if (!k) throw new Error('缺少 API Key');
     const baseURL = getOpenAICompatibleBaseUrl(provider);
-    const client = new OpenAI({
-      apiKey: k,
-      ...(baseURL ? { baseURL } : {})
-    });
+    const client = createChatClient(k, baseURL);
     const response = await client.chat.completions.create({
       ...openaiChatModelOptions(opts.model, { temperature: 0.35, maxTokens: 1200 }),
       messages: [

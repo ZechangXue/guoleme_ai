@@ -4,12 +4,14 @@ enum LLMError: LocalizedError {
     case missingKey
     case http(Int, String)
     case empty
+    case refused(String)
 
     var errorDescription: String? {
         switch self {
         case .missingKey: return "未配置 API Key"
         case .http(let code, let body): return "HTTP \(code): \(body)"
         case .empty: return "模型返回为空"
+        case .refused(let category): return category.isEmpty ? "Claude 拒绝回答" : "Claude 拒绝回答（\(category)）"
         }
     }
 }
@@ -420,6 +422,9 @@ final class LLMClient {
             temperature: 0.2,
             maxTokens: maxTokens
         )
+        if provider == .anthropic {
+            return try await ClaudeMessages.complete(apiKey: apiKey, openAIBody: body)
+        }
         let url = ProviderConfig.chatBaseURL(for: provider).appendingPathComponent("chat/completions")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -449,6 +454,10 @@ final class LLMClient {
         timeout: TimeInterval = 90,
         onDelta: @escaping (String, Bool) async -> Void
     ) async throws {
+        if provider == .anthropic {
+            try await ClaudeMessages.stream(apiKey: apiKey, openAIBody: body, timeout: max(timeout, 120), onDelta: onDelta)
+            return
+        }
         let url = ProviderConfig.chatBaseURL(for: provider).appendingPathComponent("chat/completions")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -574,5 +583,219 @@ final class LLMClient {
             ).fillingMissingAnswers()
         }
         return AssistJSON()
+    }
+}
+
+// MARK: - Claude (Anthropic Messages API)
+
+/// 选择 Claude 时，把各调用点组好的 OpenAI Chat 形状请求转换成 Anthropic Messages API 请求。
+/// iOS 没有官方 Anthropic Swift SDK，这里直接走 HTTPS。语音转写仍使用 OpenAI（Whisper）。
+enum ClaudeMessages {
+    static let defaultModel = "claude-opus-5-5"
+    private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
+    private static let apiVersion = "2026-10-21"
+    /// 支持服务端拒答兜底（fallbacks: "default"）的模型
+    private static let fallbackModels: Set<String> = [
+        "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5-2"
+    ]
+    private static let jsonOnly = "Output only the raw JSON object. Do not wrap it in markdown code fences and do not add any text before or after it."
+
+    static func complete(apiKey: String, openAIBody: [String: Any]) async throws -> String {
+        let (request, json) = try makeRequest(apiKey: apiKey, openAIBody: openAIBody, stream: false, timeout: 120)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
+            throw LLMError.http(code, String(data: data, encoding: .utf8) ?? "")
+        }
+        let obj = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) ?? [:]
+        if obj["stop_reason"] as? String == "refusal" {
+            let details = obj["stop_details"] as? [String: Any]
+            throw LLMError.refused(details?["category"] as? String ?? "")
+        }
+        let blocks = obj["content"] as? [[String: Any]] ?? []
+        let text = blocks
+            .filter { $0["type"] as? String == "text" }
+            .compactMap { $0["text"] as? String }
+            .joined()
+        let out = json ? extractJSONObject(text) : text
+        guard !out.isEmpty else { throw LLMError.empty }
+        return out
+    }
+
+    static func stream(
+        apiKey: String,
+        openAIBody: [String: Any],
+        timeout: TimeInterval,
+        onDelta: @escaping (String, Bool) async -> Void
+    ) async throws {
+        let (request, json) = try makeRequest(apiKey: apiKey, openAIBody: openAIBody, stream: true, timeout: timeout)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
+            var err = ""
+            for try await line in bytes.lines {
+                err += line
+                if err.count > 2500 { break }
+            }
+            throw LLMError.http(code, err.isEmpty ? "stream failed" : err)
+        }
+
+        let filter: JSONStreamFilter? = json ? JSONStreamFilter() : nil
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data:") else { continue }
+            let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            guard let data = payload.data(using: .utf8),
+                  let event = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { continue }
+            switch event["type"] as? String {
+            case "content_block_delta":
+                let delta = event["delta"] as? [String: Any]
+                guard delta?["type"] as? String == "text_delta", let raw = delta?["text"] as? String else { continue }
+                let text = filter?.push(raw) ?? raw
+                if !text.isEmpty { await onDelta(text, false) }
+            case "message_delta":
+                let delta = event["delta"] as? [String: Any]
+                if delta?["stop_reason"] as? String == "refusal" {
+                    let details = delta?["stop_details"] as? [String: Any]
+                    throw LLMError.refused(details?["category"] as? String ?? "")
+                }
+            case "error":
+                let err = event["error"] as? [String: Any]
+                throw LLMError.http(code, err?["message"] as? String ?? payload)
+            default:
+                continue
+            }
+        }
+        await onDelta("", true)
+    }
+
+    private static func makeRequest(
+        apiKey: String,
+        openAIBody: [String: Any],
+        stream: Bool,
+        timeout: TimeInterval
+    ) throws -> (URLRequest, Bool) {
+        let requestedModel = (openAIBody["model"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        let model = requestedModel.lowercased().hasPrefix("claude-") ? requestedModel : defaultModel
+        let json = openAIBody["response_format"] != nil
+
+        var systemParts: [String] = []
+        var messages: [[String: Any]] = []
+        for message in openAIBody["messages"] as? [[String: Any]] ?? [] {
+            let role = message["role"] as? String ?? "user"
+            if role == "system" || role == "developer" {
+                if let text = message["content"] as? String, !text.isEmpty { systemParts.append(text) }
+                continue
+            }
+            if let text = message["content"] as? String {
+                messages.append(["role": role, "content": text])
+            } else if let parts = message["content"] as? [[String: Any]] {
+                let converted: [[String: Any]] = parts.compactMap { convertPart($0) }
+                messages.append(["role": role, "content": converted])
+            }
+        }
+        if messages.first?["role"] as? String != "user" {
+            messages.insert(["role": "user", "content": json ? "Return JSON only." : "Begin."], at: 0)
+        }
+        if json { systemParts.append(jsonOnly) }
+
+        // Claude 的思考也计入 max_tokens：在调用方的可见输出上限之外留出余量
+        let requested = (openAIBody["max_completion_tokens"] as? Int) ?? (openAIBody["max_tokens"] as? Int) ?? 4000
+        var body: [String: Any] = [
+            "model": model,
+            "max_tokens": min(64_000, max(8_000, requested + 6_000)),
+            "messages": messages,
+            // 会议实时答题对延迟敏感：低 effort
+            "output_config": ["effort": "low"],
+            "stream": stream
+        ]
+        if !systemParts.isEmpty {
+            let systemBlock: [String: Any] = [
+                "type": "text",
+                "text": systemParts.joined(separator: "\n\n"),
+                "cache_control": ["type": "ephemeral"]
+            ]
+            body["system"] = [systemBlock]
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "x-api-key")
+        request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
+        if fallbackModels.contains(model) {
+            body["fallbacks"] = "default"
+            request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
+        }
+        if stream { request.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return (request, json)
+    }
+
+    private static func convertPart(_ part: [String: Any]) -> [String: Any]? {
+        switch part["type"] as? String {
+        case "text":
+            guard let text = part["text"] as? String, !text.isEmpty else { return nil }
+            return ["type": "text", "text": text]
+        case "image_url":
+            guard let url = (part["image_url"] as? [String: Any])?["url"] as? String,
+                  url.hasPrefix("data:"),
+                  let semicolon = url.firstIndex(of: ";"),
+                  let comma = url.firstIndex(of: ",") else { return nil }
+            let mediaType = String(url[url.index(url.startIndex, offsetBy: 5)..<semicolon])
+            let data = String(url[url.index(after: comma)...])
+            let source: [String: Any] = ["type": "base64", "media_type": mediaType, "data": data]
+            return ["type": "image", "source": source]
+        default:
+            return nil
+        }
+    }
+
+    private static func extractJSONObject(_ text: String) -> String {
+        let out = JSONStreamFilter().push(text)
+        return out.isEmpty ? text.trimmingCharacters(in: .whitespacesAndNewlines) : out
+    }
+}
+
+/// 流式 JSON 过滤：丢掉第一个 { 之前的内容（如 ```json 围栏），最外层 } 之后的内容不再输出
+final class JSONStreamFilter {
+    private var started = false
+    private var finished = false
+    private var depth = 0
+    private var inString = false
+    private var escaped = false
+
+    func push(_ text: String) -> String {
+        if finished { return "" }
+        var out = ""
+        for ch in text {
+            if !started {
+                guard ch == "{" else { continue }
+                started = true
+            }
+            out.append(ch)
+            if inString {
+                if escaped {
+                    escaped = false
+                } else if ch == "\\" {
+                    escaped = true
+                } else if ch == "\"" {
+                    inString = false
+                }
+                continue
+            }
+            if ch == "\"" {
+                inString = true
+            } else if ch == "{" {
+                depth += 1
+            } else if ch == "}" {
+                depth -= 1
+                if depth == 0 {
+                    finished = true
+                    break
+                }
+            }
+        }
+        return out
     }
 }

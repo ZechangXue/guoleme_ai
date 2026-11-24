@@ -6,6 +6,7 @@ import type { ApiProvider } from './types';
 /** 各服务商「instant」档默认模型（OpenAI 对应 gpt-5-mini） */
 export const DEFAULT_MODEL_BY_PROVIDER: Record<ApiProvider, string> = {
   openai: 'gpt-5-mini',
+  anthropic: 'claude-opus-5-5',
   google: 'gemini-2.0-flash',
   deepseek: 'deepseek-chat',
   qwen: 'qwen-turbo',
@@ -29,9 +30,12 @@ export function getOpenAICompatibleBaseUrl(provider: ApiProvider): string | unde
   }
 }
 
-/** 是否使用 OpenAI SDK（同一套 chat completions） */
+/**
+ * 是否走 chat completions 形状的调用（OpenAI SDK）。
+ * anthropic 也走这条路：createChatClient 会把 Claude Key 交给 Anthropic SDK 适配器（见 claudeChat.ts）。
+ */
 export function isOpenAICompatible(provider: ApiProvider): boolean {
-  return provider === 'openai' || provider === 'deepseek' || provider === 'qwen';
+  return provider === 'openai' || provider === 'anthropic' || provider === 'deepseek' || provider === 'qwen';
 }
 
 /** 当前仅 OpenAI 支持 Realtime 语音；其它服务商勾选 Realtime 时用流式 Chat 等效 */

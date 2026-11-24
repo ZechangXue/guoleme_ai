@@ -34,6 +34,7 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   openaiChatModelOptions
 } from './providerConfig';
+import { createChatClient } from './claudeChat';
 import { TRANSLATE_SUMMARY_PROMPT, buildTranslateReplyPrompt } from './sharedPrompts';
 import {
   addContextFile,
@@ -1992,9 +1993,8 @@ function registerIpcHandlers() {
       }
       const transcript = pendingText;
 
-      const OpenAI = (await import('openai')).default;
       const baseURL = getOpenAICompatibleBaseUrl(provider) ?? undefined;
-      const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+      const client = createChatClient(apiKey, baseURL);
 
       const streamOnce = async (system: string, prefix: string, doneAtEnd: boolean) => {
         if (prefix) {

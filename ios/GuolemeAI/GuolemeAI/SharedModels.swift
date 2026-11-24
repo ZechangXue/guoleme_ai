@@ -2,6 +2,7 @@ import Foundation
 
 enum ApiProvider: String, Codable, CaseIterable, Identifiable {
     case openai
+    case anthropic
     case google
     case deepseek
     case qwen
@@ -11,6 +12,7 @@ enum ApiProvider: String, Codable, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .openai: return "OpenAI"
+        case .anthropic: return "Claude (Anthropic)"
         case .google: return "Google (Gemini)"
         case .deepseek: return "DeepSeek"
         case .qwen: return "Qwen"

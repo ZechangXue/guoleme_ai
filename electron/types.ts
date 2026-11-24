@@ -16,7 +16,7 @@ export interface ReadableAssistJSON {
 export type ResponseStyle = 'concise' | 'readable';
 
 /** API 服务商：OpenAI、Google Gemini、DeepSeek、千问、Ollama 本地 */
-export type ApiProvider = 'openai' | 'google' | 'deepseek' | 'qwen' | 'ollama';
+export type ApiProvider = 'openai' | 'anthropic' | 'google' | 'deepseek' | 'qwen' | 'ollama';
 
 export type ContextLabel = 'JD' | 'Resume' | 'Notes' | 'Doc';
 
