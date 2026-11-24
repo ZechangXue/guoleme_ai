@@ -26,7 +26,7 @@
 | **实时翻译总结** | 监听对方讲话，随时一键把当前段落转写并总结成 1-2 句精炼中文，流式输出、按时间轴回顾 |
 | **下一题自动切换** | 识别到新一轮提问时自动收起旧卡、继续监听 |
 | **一键导出复盘** | 将本次面试的问答记录导出为 PDF，附带 AI 生成的中文总结 |
-| **多 AI 服务商** | 支持 OpenAI / Google Gemini / DeepSeek / 千问 / Ollama 本地 |
+| **多 AI 服务商** | 支持 OpenAI / Claude (Anthropic) / Google Gemini / DeepSeek / 千问 / Ollama 本地 |
 | **系统音频捕获** | WASAPI loopback 直接录制扬声器输出，不录麦克风 |
 
 ---
@@ -43,7 +43,7 @@
 
 前往 [GitHub Releases](https://github.com/ZechangXue/guoleme_ai/releases) 下载最新版 `.exe` 安装包，双击安装即可。
 
-当前版本：**v3.0.1**（Windows x64）
+当前版本：**v3.1.0**（Windows x64）
 
 ---
 
@@ -93,7 +93,7 @@ npm run dist:win
 ### 2. 推荐设置
 
 - **答案语言**：Settings 顶部切换 English / 中文，中英文面试均可
-- **服务商**：OpenAI，模型默认 `gpt-5-mini`
+- **服务商**：OpenAI，模型默认 `gpt-5-mini`；也可选 Claude (Anthropic)，模型默认 `claude-opus-5-5`（回答、翻译、总结、会前准备都走 Claude，语音转写仍需 OpenAI Key）
 - **模式**：默认开启 Realtime 一体（音频直通，延迟最低）
 - **回答风格**：极简提醒（Concise）日常使用；卡壳时切换可读答案
 - **音频来源**：System Audio（监听对方声音）；自测时换 Microphone

@@ -1,5 +1,14 @@
 # 更新日志
 
+## v3.1.0
+
+- 新增 **Claude (Anthropic)** 服务商：设置 →「API 服务商」选 Claude，保存 `sk-ant-` 开头的 Key，默认模型 `claude-opus-5-5`
+- 选 Claude 时，答题卡、截图答题、中→英、翻译总结与回应建议、会前准备、画像草稿、会议记忆、面试复盘总结都由 Claude 生成；语音转写仍使用 OpenAI Whisper，需要保留 OpenAI Key
+- 使用 OpenAI / DeepSeek / 千问 / Gemini / Ollama 时行为不变
+- iOS 伴侣 App 同步支持 Claude 服务商
+- Mac 打包：`wasapi-loopback` 改为可选依赖，macOS 安装依赖不再报错
+- 安装包：`AI.Setup.3.1.0.exe`
+
 ## v3.0.1
 
 - 会议准备 →「本周进展」新增「从文件导入」：PDF / DOCX / TXT / MD 一键提取文字（已有内容时可选替换或追加），扫描件会提示改用粘贴
