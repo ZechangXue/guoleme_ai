@@ -110,6 +110,21 @@ import {
 } from './meetingProfile';
 import { buildPersonaBlock } from './meetingPrompt';
 
+/** 从 TXT / MD / PDF / DOCX 提取纯文本（资料库上传和「本周进展」导入共用） */
+async function extractDocumentText(filePath: string): Promise<string> {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.txt' || ext === '.md') return fs.readFileSync(filePath, 'utf-8');
+  if (ext === '.pdf') {
+    const data = await pdfParse(fs.readFileSync(filePath));
+    return data.text || '';
+  }
+  if (ext === '.docx') {
+    const result = await mammoth.extractRawText({ path: filePath });
+    return result.value || '';
+  }
+  throw new Error('不支持的文件类型：' + ext);
+}
+
 // ─────────────────────────────────────────────
 // 音频设备工具函数
 // ─────────────────────────────────────────────
@@ -1797,6 +1812,29 @@ function registerIpcHandlers() {
     setPersonaText(String(text ?? ''));
     return { ok: true };
   });
+  // 「本周进展」从文件导入：选 PDF / DOCX / TXT，只提取文字返回给界面，由用户确认后再保存
+  ipcMain.handle('meeting:importNotesFile', async () => {
+    if (!mainWindow) return { ok: false, error: '窗口未就绪' };
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: '导入本周进展（PDF / DOCX / TXT / MD）',
+      properties: ['openFile'],
+      filters: [{ name: '文档', extensions: ['pdf', 'docx', 'txt', 'md'] }]
+    });
+    if (canceled || !filePaths[0]) return { ok: false, canceled: true };
+    try {
+      const text = (await extractDocumentText(filePaths[0]))
+        .replace(/\r\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      if (!text) {
+        return { ok: false, error: '没有从文件里读到文字（可能是扫描件 / 图片 PDF），请复制文字后粘贴' };
+      }
+      return { ok: true, fileName: path.basename(filePaths[0]), text };
+    } catch (err) {
+      return { ok: false, error: (err as Error)?.message ?? String(err) };
+    }
+  });
+
   ipcMain.handle('meeting:setWeeklyNotes', (_e, text: string) => {
     setWeeklyNotes(String(text ?? ''));
     return { ok: true };
@@ -2300,20 +2338,7 @@ function registerIpcHandlers() {
     'context:addFile',
     async (_e, payload: { filePath: string; label: 'JD' | 'Resume' | 'Notes' | 'Doc' }) => {
       const { filePath, label } = payload;
-      const ext = path.extname(filePath).toLowerCase();
-      let text = '';
-
-      if (ext === '.txt' || ext === '.md') {
-        text = fs.readFileSync(filePath, 'utf-8');
-      } else if (ext === '.pdf') {
-        const data = await pdfParse(fs.readFileSync(filePath));
-        text = data.text || '';
-      } else if (ext === '.docx') {
-        const result = await mammoth.extractRawText({ path: filePath });
-        text = result.value || '';
-      } else {
-        throw new Error('不支持的文件类型：' + ext);
-      }
+      const text = await extractDocumentText(filePath);
 
       const fileName = path.basename(filePath);
       // 'Doc' 标签直接映射为 meeting_doc，跳过启发式分类器

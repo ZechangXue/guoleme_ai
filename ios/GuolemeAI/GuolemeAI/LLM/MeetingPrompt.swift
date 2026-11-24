@@ -5,6 +5,8 @@ import Foundation
 /// the dynamic part (trigger, earlier cards, live transcript, latest utterance) goes into the user message.
 enum MeetingPrompt {
     static let docMaxChars = 120_000
+    /// Cap for "This week" so an imported weekly-report PDF doesn't bloat every card prompt.
+    static let weeklyNotesMaxChars = 30_000
 
     static func languageName(_ language: AnswerLanguage) -> String {
         language == .zh ? "Simplified Chinese" : "English"
@@ -81,7 +83,7 @@ enum MeetingPrompt {
         let script = (state.prep?.updateScript ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if notes.isEmpty && script.isEmpty { return "(no notes for this week)" }
         var parts: [String] = []
-        if !notes.isEmpty { parts.append("My notes (raw, may be Chinese):\n\(notes)") }
+        if !notes.isEmpty { parts.append("My notes (raw, may be Chinese):\n\(truncate(notes, weeklyNotesMaxChars))") }
         if !script.isEmpty { parts.append("My prepared spoken update:\n\(script)") }
         return parts.joined(separator: "\n\n")
     }

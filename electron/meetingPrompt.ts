@@ -14,6 +14,8 @@ import { getMeetingProfileState, getRecentDigestedSessions, getActiveSession } f
 
 /** 每次答题注入的项目文档上限（字符）；过大既慢又贵 */
 const MEETING_DOC_MAX_CHARS = 120_000;
+/** 「本周进展」注入上限：导入整份周报 PDF 时避免每张卡都带几万字 */
+export const WEEKLY_NOTES_MAX_CHARS = 30_000;
 
 export const SCENE_LABEL_ZH: Record<MeetingScene, string> = {
   weekly: '周组会进展',
@@ -87,7 +89,7 @@ export function buildThisWeekBlock(): string {
   const script = st.prep?.update_script_en?.trim();
   if (!notes && !script) return '(no notes for this week)';
   const parts: string[] = [];
-  if (notes) parts.push(`My notes (raw, may be Chinese):\n${notes}`);
+  if (notes) parts.push(`My notes (raw, may be Chinese):\n${truncate(notes, WEEKLY_NOTES_MAX_CHARS)}`);
   if (script) parts.push(`My prepared spoken update:\n${script}`);
   return parts.join('\n\n');
 }

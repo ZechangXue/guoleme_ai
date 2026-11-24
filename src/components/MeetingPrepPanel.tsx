@@ -110,6 +110,26 @@ const MeetingPrepPanel: React.FC<Props> = ({ onClose, onChanged }) => {
     onChanged();
   };
 
+  const importNotesFile = async () => {
+    const r = await window.teleprompter.importMeetingNotesFile();
+    if (!r.ok) {
+      if (!r.canceled && r.error) alert(r.error);
+      return;
+    }
+    const imported = (r.text ?? '').trim();
+    let next = imported;
+    if (notes.trim()) {
+      // 默认替换（每周换一次）；取消则追加在后面
+      const replace = window.confirm(`用「${r.fileName}」替换当前的本周进展？\n\n确定 = 替换，取消 = 追加到末尾`);
+      next = replace ? imported : `${notes.trim()}\n\n--- ${r.fileName} ---\n${imported}`;
+    }
+    setNotes(next);
+    await window.teleprompter.setMeetingWeeklyNotes(next);
+    setNotesDirty(false);
+    onChanged();
+    flash(`已导入「${r.fileName}」（${imported.length} 字），可以直接修改，再点「生成汇报稿与预测追问」`);
+  };
+
   const generatePrep = async () => {
     setBusy('prep');
     try {
@@ -301,6 +321,9 @@ const MeetingPrepPanel: React.FC<Props> = ({ onClose, onChanged }) => {
               onBlur={() => notesDirty && saveNotes()}
             />
             <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" onClick={importNotesFile} title="PDF / DOCX / TXT / MD，只提取文字">
+                从文件导入
+              </button>
               <button className="btn" onClick={generatePrep} disabled={busy === 'prep' || !notes.trim()}>
                 {busy === 'prep' ? '生成中…' : '生成汇报稿与预测追问'}
               </button>

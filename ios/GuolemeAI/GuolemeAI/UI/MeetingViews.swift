@@ -460,6 +460,14 @@ struct MeetingPrepSheet: View {
     @State private var message: String?
     @State private var loaded = false
     @State private var confirmClearMemory = false
+    @State private var showNotesImporter = false
+    @State private var pendingImport: ImportedNotes?
+
+    struct ImportedNotes: Identifiable {
+        let id = UUID()
+        let fileName: String
+        let text: String
+    }
 
     var body: some View {
         NavigationStack {
@@ -516,7 +524,65 @@ struct MeetingPrepSheet: View {
             } message: {
                 Text(model.tr("删除后无法恢复。", "This cannot be undone."))
             }
+            .fileImporter(isPresented: $showNotesImporter, allowedContentTypes: DocumentImporter.allowedTypes) { result in
+                switch result {
+                case .success(let url):
+                    readNotesFile(url)
+                case .failure(let error):
+                    message = error.localizedDescription
+                }
+            }
+            .confirmationDialog(
+                model.tr("已有本周进展，怎么处理导入的内容？", "This week already has notes. What should the import do?"),
+                isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button(model.tr("替换", "Replace")) { applyImport(append: false) }
+                Button(model.tr("追加到末尾", "Append")) { applyImport(append: true) }
+                Button(model.tr("取消", "Cancel"), role: .cancel) { pendingImport = nil }
+            }
         }
+    }
+
+    /// Extracts text from a PDF / DOCX / TXT into "This week"; asks before replacing existing notes.
+    private func readNotesFile(_ url: URL) {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let text = try DocumentImporter.text(from: url)
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                message = model.tr("没有从文件里读到文字（可能是扫描件 / 图片 PDF），请复制文字后粘贴",
+                                   "No text found in that file (scanned / image PDF?). Copy the text and paste it instead.")
+                return
+            }
+            let imported = ImportedNotes(fileName: url.lastPathComponent, text: text)
+            if notesDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                pendingImport = imported
+                applyImport(append: false)
+            } else {
+                pendingImport = imported
+            }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func applyImport(append: Bool) {
+        guard let imported = pendingImport else { return }
+        pendingImport = nil
+        let current = notesDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        notesDraft = append && !current.isEmpty
+            ? "\(current)\n\n--- \(imported.fileName) ---\n\(imported.text)"
+            : imported.text
+        profile.setWeeklyNotes(notesDraft)
+        profile.flush()
+        message = model.tr(
+            "已导入「\(imported.fileName)」（\(imported.text.count) 字），可以直接修改，再点「生成汇报稿和可能追问」",
+            "Imported \(imported.fileName) (\(imported.text.count) chars). Edit it if needed, then tap Prepare."
+        )
     }
 
     private func saveDrafts() {
@@ -634,6 +700,10 @@ struct MeetingPrepSheet: View {
                     message = model.tr("已保存", "Saved")
                 }
                 .disabled(notesDraft == profile.state.weeklyNotes)
+                Spacer()
+                Button(model.tr("从文件导入", "Import file")) {
+                    showNotesImporter = true
+                }
                 Spacer()
                 Button(meeting.prepBusy ? model.tr("生成中…", "Preparing…") : model.tr("生成汇报稿和可能追问", "Prepare update & Q&A")) {
                     Task { await generatePrep() }

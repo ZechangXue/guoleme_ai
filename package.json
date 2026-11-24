@@ -1,6 +1,6 @@
 {
   "name": "interview-teleprompter-ai",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Interview Teleprompter AI - Windows Desktop App",
   "main": ".electron-build/main.js",
   "scripts": {

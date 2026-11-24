@@ -84,6 +84,7 @@ declare global {
       getMeetingState: () => Promise<MeetingProfileState & { transcript: MeetingTranscriptLine[] }>;
       setMeetingPersona: (text: string) => Promise<{ ok: boolean }>;
       setMeetingWeeklyNotes: (text: string) => Promise<{ ok: boolean }>;
+      importMeetingNotesFile: () => Promise<{ ok: boolean; canceled?: boolean; error?: string; fileName?: string; text?: string }>;
       generateMeetingPrep: () => Promise<MeetingResult<{ prep: MeetingPrep }>>;
       clearMeetingPrep: () => Promise<{ ok: boolean }>;
       draftMeetingPersona: () => Promise<MeetingResult<{ text: string }>>;

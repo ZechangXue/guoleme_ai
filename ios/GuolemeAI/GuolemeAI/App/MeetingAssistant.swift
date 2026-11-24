@@ -586,7 +586,7 @@ final class MeetingAssistant: ObservableObject {
         \(MeetingPrompt.pastMeetingsBlock(profile.recentDigestedSessions(limit: 3)))
 
         [MY NOTES FOR THIS MEETING]
-        \(notes)
+        \(MeetingPrompt.truncate(notes, MeetingPrompt.weeklyNotesMaxChars))
         """
         let dict = try await llm.completeJSONObject(
             provider: target.provider, apiKey: target.apiKey, model: target.model,

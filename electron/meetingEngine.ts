@@ -38,6 +38,7 @@ import {
   buildPastMeetingsBlock,
   buildPersonaBlock,
   buildProjectDocsBlock,
+  WEEKLY_NOTES_MAX_CHARS,
   type MeetingTriggerKind
 } from './meetingPrompt';
 import {
@@ -629,7 +630,7 @@ ${buildProjectDocsBlock(60_000)}
 ${buildPastMeetingsBlock(3)}
 
 [MY NOTES FOR THIS MEETING]
-${state.weeklyNotes.trim()}`;
+${state.weeklyNotes.trim().slice(0, WEEKLY_NOTES_MAX_CHARS)}`;
     const r = await completeJson<Partial<MeetingPrep>>(system, user, 3000);
     const prep: MeetingPrep = {
       update_script_en: String(r.update_script_en ?? '').trim(),

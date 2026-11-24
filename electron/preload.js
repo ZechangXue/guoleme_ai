@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('teleprompter', {
   getMeetingState: () => ipcRenderer.invoke('meeting:getState'),
   setMeetingPersona: (text) => ipcRenderer.invoke('meeting:setPersona', text),
   setMeetingWeeklyNotes: (text) => ipcRenderer.invoke('meeting:setWeeklyNotes', text),
+  importMeetingNotesFile: () => ipcRenderer.invoke('meeting:importNotesFile'),
   generateMeetingPrep: () => ipcRenderer.invoke('meeting:generatePrep'),
   clearMeetingPrep: () => ipcRenderer.invoke('meeting:clearPrep'),
   draftMeetingPersona: () => ipcRenderer.invoke('meeting:draftPersona'),
