@@ -10,7 +10,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 
-export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5-5';
+export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5-5';
 
 /** 支持服务端拒答兜底（fallbacks: "default"）的模型 */
 const FALLBACK_MODELS = new Set([
@@ -175,6 +175,8 @@ class ClaudeChatAdapter {
         ? { system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }] }
         : {})
     };
+    const thinking = thinkingOffConfig(model);
+    if (thinking) body.thinking = thinking;
     if (FALLBACK_MODELS.has(model)) {
       body.betas = ['server-side-fallback-2026-07-01'];
       body.fallbacks = 'default';
@@ -221,6 +223,16 @@ class ClaudeChatAdapter {
       choices: [{ delta: {}, finish_reason: message.stop_reason === 'max_tokens' ? 'length' : 'stop' }]
     };
   }
+}
+
+/**
+ * 会议答题对首字延迟最敏感：能关思考的模型就关掉。
+ * Sonnet 5.5 用 between_tools（它不接受 disabled）；Haiku 5.5 可用 disabled；Opus 5.5 思考关不掉，保持默认。
+ */
+function thinkingOffConfig(model: string): Anthropic.Beta.BetaThinkingConfigParam | null {
+  if (model === 'claude-sonnet-5-5') return { type: 'between_tools' };
+  if (model === 'claude-haiku-5-5') return { type: 'disabled' };
+  return null;
 }
 
 function assertNotRefused(message: Anthropic.Beta.BetaMessage): void {

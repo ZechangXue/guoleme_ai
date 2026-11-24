@@ -4,7 +4,7 @@ enum ProviderConfig {
     static func defaultModel(for provider: ApiProvider) -> String {
         switch provider {
         case .openai: return "gpt-5-mini"
-        case .anthropic: return "claude-opus-5-5"
+        case .anthropic: return "claude-sonnet-5-5"
         case .google: return "gemini-2.0-flash"
         case .deepseek: return "deepseek-chat"
         case .qwen: return "qwen-turbo"

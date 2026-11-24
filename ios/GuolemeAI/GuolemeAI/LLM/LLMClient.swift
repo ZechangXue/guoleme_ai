@@ -591,7 +591,7 @@ final class LLMClient {
 /// 选择 Claude 时，把各调用点组好的 OpenAI Chat 形状请求转换成 Anthropic Messages API 请求。
 /// iOS 没有官方 Anthropic Swift SDK，这里直接走 HTTPS。语音转写仍使用 OpenAI（Whisper）。
 enum ClaudeMessages {
-    static let defaultModel = "claude-opus-5-5"
+    static let defaultModel = "claude-sonnet-5-5"
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     private static let apiVersion = "2026-10-21"
     /// 支持服务端拒答兜底（fallbacks: "default"）的模型
@@ -723,6 +723,12 @@ enum ClaudeMessages {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "x-api-key")
         request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
+        // 会议答题对首字延迟最敏感：Sonnet 5.5 用 between_tools 关思考，Haiku 5.5 用 disabled；Opus 5.5 关不掉
+        if model == "claude-sonnet-5-5" {
+            body["thinking"] = ["type": "between_tools"]
+        } else if model == "claude-haiku-5-5" {
+            body["thinking"] = ["type": "disabled"]
+        }
         if fallbackModels.contains(model) {
             body["fallbacks"] = "default"
             request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")

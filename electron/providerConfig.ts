@@ -6,7 +6,7 @@ import type { ApiProvider } from './types';
 /** 各服务商「instant」档默认模型（OpenAI 对应 gpt-5-mini） */
 export const DEFAULT_MODEL_BY_PROVIDER: Record<ApiProvider, string> = {
   openai: 'gpt-5-mini',
-  anthropic: 'claude-opus-5-5',
+  anthropic: 'claude-sonnet-5-5',
   google: 'gemini-2.0-flash',
   deepseek: 'deepseek-chat',
   qwen: 'qwen-turbo',

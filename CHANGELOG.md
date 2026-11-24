@@ -1,5 +1,12 @@
 # 更新日志
 
+## v3.1.1
+
+- Claude 默认模型改为 `claude-sonnet-5-5`，并关闭思考：实测答题卡约 0.8 秒弹出（Opus 5.5 约 1.4–1.8 秒），整张卡约 6.5 秒写完（Opus 约 8 秒）
+- 手动选 `claude-haiku-5-5` 时同样关闭思考，速度最快；`claude-opus-5-5` 的思考无法关闭，保持原样
+- iOS 同步
+- 安装包：`AI.Setup.3.1.1.exe`
+
 ## v3.1.0
 
 - 新增 **Claude (Anthropic)** 服务商：设置 →「API 服务商」选 Claude，保存 `sk-ant-` 开头的 Key，默认模型 `claude-opus-5-5`

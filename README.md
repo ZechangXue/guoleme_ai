@@ -43,7 +43,7 @@
 
 前往 [GitHub Releases](https://github.com/ZechangXue/guoleme_ai/releases) 下载最新版 `.exe` 安装包，双击安装即可。
 
-当前版本：**v3.1.0**（Windows x64）
+当前版本：**v3.1.1**（Windows x64）
 
 ---
 
@@ -93,7 +93,7 @@ npm run dist:win
 ### 2. 推荐设置
 
 - **答案语言**：Settings 顶部切换 English / 中文，中英文面试均可
-- **服务商**：OpenAI，模型默认 `gpt-5-mini`；也可选 Claude (Anthropic)，模型默认 `claude-opus-5-5`（回答、翻译、总结、会前准备都走 Claude，语音转写仍需 OpenAI Key）
+- **服务商**：OpenAI，模型默认 `gpt-5-mini`；也可选 Claude (Anthropic)，模型默认 `claude-sonnet-5-5`（回答、翻译、总结、会前准备都走 Claude，语音转写仍需 OpenAI Key）
 - **模式**：默认开启 Realtime 一体（音频直通，延迟最低）
 - **回答风格**：极简提醒（Concise）日常使用；卡壳时切换可读答案
 - **音频来源**：System Audio（监听对方声音）；自测时换 Microphone
